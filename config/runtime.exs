@@ -28,12 +28,15 @@ mqtt_url = URI.parse(System.get_env("MQTT_URL") || "mqtt://localhost:1883/modbus
     info -> (String.split(info, ":", parts: 2) ++ [nil]) |> Enum.take(2)
   end
 
+mqtt_client_id = System.get_env("MQTT_CLIENT_ID")
+
 config :modbus_mqtt, :mqtt,
   host: mqtt_url.host || "localhost",
   port: mqtt_url.port || 1883,
   username: mqtt_user,
   password: mqtt_pass,
-  base_topic: String.trim_leading(mqtt_url.path || "/modbus_mqtt", "/")
+  base_topic: String.trim_leading(mqtt_url.path || "/modbus_mqtt", "/"),
+  client_id: mqtt_client_id
 
 if config_env() == :prod do
   database_path =

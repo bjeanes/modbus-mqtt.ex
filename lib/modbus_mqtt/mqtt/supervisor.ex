@@ -15,7 +15,7 @@ defmodule ModbusMqtt.Mqtt.Supervisor do
     server_opt = {Tortoise311.Transport.Tcp, host: config[:host], port: config[:port]}
 
     opts = [
-      client_id: "modbus_mqtt_client",
+      client_id: client_id(),
       server: server_opt,
       handler: {ModbusMqtt.Mqtt.Handler, []},
       will: bridge_last_will()
@@ -38,7 +38,16 @@ defmodule ModbusMqtt.Mqtt.Supervisor do
   @doc "Helper to publish a payload to the broker"
   def publish(topic, payload, opts \\ []) do
     normalized_payload = if is_nil(payload), do: nil, else: to_string(payload)
-    Tortoise311.publish("modbus_mqtt_client", topic, normalized_payload, opts)
+    Tortoise311.publish(client_id(), topic, normalized_payload, opts)
+  end
+
+  defp client_id do
+    Application.fetch_env!(:modbus_mqtt, :mqtt)[:client_id] || default_client_id()
+  end
+
+  defp default_client_id do
+    {:ok, hostname} = :inet.gethostname()
+    "modbus_mqtt@#{hostname}"
   end
 
   defp bridge_last_will do
