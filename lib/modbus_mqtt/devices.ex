@@ -39,6 +39,7 @@ defmodule ModbusMqtt.Devices do
     %Device{}
     |> Device.changeset(attrs)
     |> Repo.insert()
+    |> maybe_reconcile_engine()
   end
 
   @doc "Updates a device"
@@ -46,11 +47,14 @@ defmodule ModbusMqtt.Devices do
     device
     |> Device.changeset(attrs)
     |> Repo.update()
+    |> maybe_reconcile_engine()
   end
 
   @doc "Deletes a device"
   def delete_device(%Device{} = device) do
-    Repo.delete(device)
+    device
+    |> Repo.delete()
+    |> maybe_reconcile_engine()
   end
 
   @doc "Returns a device changeset for use in forms"
@@ -63,6 +67,7 @@ defmodule ModbusMqtt.Devices do
     %Register{}
     |> Register.changeset(Map.put(attrs, "device_id", device_id))
     |> Repo.insert()
+    |> maybe_reconcile_engine()
   end
 
   @doc "Updates a register"
@@ -70,11 +75,14 @@ defmodule ModbusMqtt.Devices do
     register
     |> Register.changeset(attrs)
     |> Repo.update()
+    |> maybe_reconcile_engine()
   end
 
   @doc "Deletes a register"
   def delete_register(%Register{} = register) do
-    Repo.delete(register)
+    register
+    |> Repo.delete()
+    |> maybe_reconcile_engine()
   end
 
   @doc "Returns a register changeset for use in forms"
@@ -100,4 +108,11 @@ defmodule ModbusMqtt.Devices do
   def get_register(id) do
     Repo.get(Register, id)
   end
+
+  defp maybe_reconcile_engine({:ok, _record} = result) do
+    ModbusMqtt.Engine.Reconciler.reconcile_now()
+    result
+  end
+
+  defp maybe_reconcile_engine(result), do: result
 end

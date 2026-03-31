@@ -53,10 +53,11 @@ Current priority is read-only telemetry.
 
 ## Architecture (high level)
 
-1. `Engine.Bootstrapper` loads active devices/registers from DB at boot.
-2. `Engine.Supervisor` starts one `DeviceSupervisor` tree per device.
+1. `Engine.Reconciler` continuously converges runtime state to DB configuration.
+2. `Engine.Supervisor` runs one `DeviceSupervisor` tree per active device.
 3. Each device tree runs one Modbus `Connection` process and one `Poller` per register.
-4. `Engine.Hub` caches latest values, filters duplicates, broadcasts internally, and publishes to MQTT.
+4. `Devices` context writes trigger immediate reconciliation so device/register changes apply quickly.
+5. `Engine.Hub` caches latest values, filters duplicates, broadcasts internally, and publishes to MQTT.
 
 ## Run locally
 

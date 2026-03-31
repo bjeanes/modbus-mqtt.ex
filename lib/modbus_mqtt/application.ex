@@ -20,8 +20,8 @@ defmodule ModbusMqtt.Application do
       # The state cache for filtering deltas and live views
       ModbusMqtt.Engine.Hub,
       ModbusMqtt.Engine.Supervisor,
-      # Start initial configured devices in DB
-      ModbusMqtt.Engine.Bootstrapper,
+      # Keep running device trees reconciled with DB configuration
+      ModbusMqtt.Engine.Reconciler,
       # Start to serve requests, typically the last entry
       ModbusMqttWeb.Endpoint
     ]

@@ -55,6 +55,22 @@ defmodule ModbusMqtt.Engine.ConnectionTest do
     end
   end
 
+  defmodule FakeClientReadDisconnected do
+    @behaviour ModbusMqtt.Client
+
+    def open(config), do: Agent.start_link(fn -> config end)
+
+    def close(pid) do
+      Agent.stop(pid)
+      :ok
+    end
+
+    def read_coils(_pid, _unit, _address, _count), do: {:error, :enotconn}
+    def read_discrete_inputs(_pid, _unit, _address, _count), do: {:error, :enotconn}
+    def read_holding_registers(_pid, _unit, _address, _count), do: {:error, :enotconn}
+    def read_input_registers(_pid, _unit, _address, _count), do: {:error, :enotconn}
+  end
+
   test "returns an error when the connection process is absent" do
     assert Connection.read_holding_registers(-1, 1, 0, 1) == {:error, :device_not_running}
   end
@@ -250,5 +266,42 @@ defmodule ModbusMqtt.Engine.ConnectionTest do
     assert_receive {:status, :retrying_connection, ^device_id, 2}, 2000
     assert_receive {:status, :connection_failed, ^device_id, _message}, 2000
     assert_receive {:EXIT, ^pid, :permanent_failure}
+  end
+
+  test "stops connection on fatal enotconn read error" do
+    trap_exit? = Process.flag(:trap_exit, true)
+    on_exit(fn -> Process.flag(:trap_exit, trap_exit?) end)
+
+    device_id = System.unique_integer([:positive])
+
+    device = %{
+      id: device_id,
+      name: "Disconnected Device",
+      protocol: :tcp,
+      unit: 1,
+      test_pid: self(),
+      transport_config: %{
+        "host" => "127.0.0.1",
+        "device_id" => device_id,
+        "test_pid" => self()
+      }
+    }
+
+    {:ok, pid} =
+      Connection.start_link(
+        {device,
+         [
+           client: FakeClientReadDisconnected,
+           status: FakeStatus,
+           max_retries: 0
+         ]}
+      )
+
+    assert_receive {:status, :connecting, ^device_id}
+    assert_receive {:status, :connected, ^device_id}
+
+    assert Connection.read_holding_registers(device_id, 1, 0, 1) == {:error, :enotconn}
+    assert_receive {:status, :disconnected, ^device_id, _reason}, 1000
+    assert_receive {:EXIT, ^pid, {:fatal_read_error, :enotconn}}, 1000
   end
 end

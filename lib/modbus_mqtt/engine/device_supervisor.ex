@@ -14,6 +14,14 @@ defmodule ModbusMqtt.Engine.DeviceSupervisor do
     Supervisor.start_link(__MODULE__, device, name: name)
   end
 
+  @doc "Gets the PID of the device supervisor for the given device ID"
+  def whereis(device_id) do
+    case Registry.lookup(ModbusMqtt.Registry, {__MODULE__, device_id}) do
+      [{pid, _}] -> pid
+      [] -> nil
+    end
+  end
+
   defp via_tuple(device_id) do
     {:via, Registry, {ModbusMqtt.Registry, {__MODULE__, device_id}}}
   end

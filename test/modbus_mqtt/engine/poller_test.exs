@@ -94,7 +94,7 @@ defmodule ModbusMqtt.Engine.PollerTest do
   end
 
   test "reports read errors without crashing" do
-    :persistent_term.put({FakeConnection, :reply}, {:error, :device_not_running})
+    :persistent_term.put({FakeConnection, :reply}, {:error, {:exit, :timeout}})
 
     device = %{id: 11, unit: 1, name: "Meter", test_pid: self()}
 
@@ -128,6 +128,43 @@ defmodule ModbusMqtt.Engine.PollerTest do
     assert_receive {:read_holding_registers, 11, 1, 123, 1}
     assert_receive {:status, :device_error, 11, message}
     assert message =~ "Read failed"
+    assert Process.alive?(pid)
+  end
+
+  test "does not publish device_error for reconnecting errors" do
+    :persistent_term.put({FakeConnection, :reply}, {:error, :device_not_running})
+
+    device = %{id: 12, unit: 1, name: "Meter", test_pid: self()}
+
+    register = %{
+      name: "power",
+      address: 456,
+      address_offset: 0,
+      data_type: :uint16,
+      poll_interval_ms: 30_000,
+      scale: 0,
+      swap_words: false,
+      swap_bytes: false,
+      type: :holding_register
+    }
+
+    pid =
+      start_supervised!(
+        {Poller,
+         %{
+           device: device,
+           register: register,
+           destination: FakeDestination,
+           connection: FakeConnection,
+           status: FakeStatus,
+           initial_poll_ms: :manual
+         }}
+      )
+
+    send(pid, :poll)
+
+    assert_receive {:read_holding_registers, 12, 1, 456, 1}
+    refute_receive {:status, :device_error, 12, _message}, 100
     assert Process.alive?(pid)
   end
 end

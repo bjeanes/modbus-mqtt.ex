@@ -197,7 +197,7 @@ defmodule ModbusMqtt.Engine.Connection do
         _from,
         %{client: client, conn_pid: conn_pid} = state
       ) do
-    {:reply, client.read_holding_registers(conn_pid, unit, address, count), state}
+    handle_client_read(state, client.read_holding_registers(conn_pid, unit, address, count))
   end
 
   def handle_call(
@@ -205,7 +205,7 @@ defmodule ModbusMqtt.Engine.Connection do
         _from,
         %{client: client, conn_pid: conn_pid} = state
       ) do
-    {:reply, client.read_coils(conn_pid, unit, address, count), state}
+    handle_client_read(state, client.read_coils(conn_pid, unit, address, count))
   end
 
   def handle_call(
@@ -213,7 +213,7 @@ defmodule ModbusMqtt.Engine.Connection do
         _from,
         %{client: client, conn_pid: conn_pid} = state
       ) do
-    {:reply, client.read_discrete_inputs(conn_pid, unit, address, count), state}
+    handle_client_read(state, client.read_discrete_inputs(conn_pid, unit, address, count))
   end
 
   def handle_call(
@@ -221,8 +221,24 @@ defmodule ModbusMqtt.Engine.Connection do
         _from,
         %{client: client, conn_pid: conn_pid} = state
       ) do
-    {:reply, client.read_input_registers(conn_pid, unit, address, count), state}
+    handle_client_read(state, client.read_input_registers(conn_pid, unit, address, count))
   end
+
+  defp handle_client_read(state, {:error, reason} = result) do
+    if fatal_connection_error?(reason) do
+      device = state.device
+
+      Logger.error(
+        "Modbus device #{device.id} (#{device.name}) detected fatal read error #{format_reason(reason)}; restarting device connection tree"
+      )
+
+      {:stop, {:fatal_read_error, reason}, result, state}
+    else
+      {:reply, result, state}
+    end
+  end
+
+  defp handle_client_read(state, result), do: {:reply, result, state}
 
   @impl true
   def terminate(
@@ -287,6 +303,17 @@ defmodule ModbusMqtt.Engine.Connection do
 
   defp termination_error(reason) when reason in [:normal, :shutdown], do: nil
   defp termination_error(reason), do: format_reason(reason)
+
+  defp fatal_connection_error?(:enotconn), do: true
+  defp fatal_connection_error?(:closed), do: true
+  defp fatal_connection_error?(:econnreset), do: true
+  defp fatal_connection_error?({:exit, :enotconn}), do: true
+  defp fatal_connection_error?({:exit, :closed}), do: true
+  defp fatal_connection_error?({:exit, :econnreset}), do: true
+  defp fatal_connection_error?({:exit, {:enotconn, _}}), do: true
+  defp fatal_connection_error?({:exit, {:closed, _}}), do: true
+  defp fatal_connection_error?({:exit, {:econnreset, _}}), do: true
+  defp fatal_connection_error?(_), do: false
 
   defp format_reason(reason) do
     inspect(reason, pretty: true, limit: :infinity)

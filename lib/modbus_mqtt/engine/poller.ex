@@ -78,9 +78,18 @@ defmodule ModbusMqtt.Engine.Poller do
     message =
       "Read failed for #{device.name} register #{reg.name} at address #{reg.address}: #{inspect(reason)}"
 
-    Logger.warning(message)
-    status.device_error(device, message)
+    if reconnecting_reason?(reason) do
+      Logger.debug(message)
+    else
+      Logger.warning(message)
+      status.device_error(device, message)
+    end
   end
+
+  defp reconnecting_reason?(:not_connected), do: true
+  defp reconnecting_reason?(:device_not_running), do: true
+  defp reconnecting_reason?({:exit, :noproc}), do: true
+  defp reconnecting_reason?(_), do: false
 
   defp schedule_initial_poll(%{initial_poll_ms: :manual}), do: :ok
 
