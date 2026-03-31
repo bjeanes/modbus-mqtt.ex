@@ -46,7 +46,7 @@ defmodule ModbusMqtt.Engine.Scanner do
   defp scan(%{device: device, register_type: type, start_address: addr, count: count} = state) do
     unit = device.unit
 
-    Logger.debug("Scanning #{device.name} #{type} #{addr}+#{count} (unit #{unit})")
+    # Logger.debug("Scanning #{device.name} #{type} #{addr}+#{count} (unit #{unit})")
 
     result =
       case type do
