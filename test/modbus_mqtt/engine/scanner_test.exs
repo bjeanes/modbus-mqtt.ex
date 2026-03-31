@@ -1,6 +1,7 @@
 defmodule ModbusMqtt.Engine.ScannerTest do
   use ExUnit.Case, async: false
 
+  alias ModbusMqtt.Engine.RegisterCache
   alias ModbusMqtt.Engine.Scanner
 
   defmodule FakeStatus do
@@ -35,16 +36,16 @@ defmodule ModbusMqtt.Engine.ScannerTest do
   setup do
     :persistent_term.put({FakeConnection, :owner}, self())
 
-    # Create a unique ETS table for RegisterCache per test
-    table = :"register_cache_#{System.unique_integer([:positive])}"
-    :ets.new(table, [:named_table, :set, :public, read_concurrency: true])
+    if :ets.whereis(:modbus_mqtt_register_cache) == :undefined do
+      :ets.new(:modbus_mqtt_register_cache, [:named_table, :set, :public, read_concurrency: true])
+    end
 
     on_exit(fn ->
       :persistent_term.erase({FakeConnection, :owner})
       :persistent_term.erase({FakeConnection, :reply})
     end)
 
-    %{cache_table: table}
+    :ok
   end
 
   test "scans holding registers and writes to RegisterCache" do
@@ -71,6 +72,7 @@ defmodule ModbusMqtt.Engine.ScannerTest do
 
     assert_receive {:read_holding_registers, 10, 2, 40001, 3}
     assert_receive {:status, :clear_error, 10}
+    assert {:ok, [100, 200, 300]} = RegisterCache.get_words(10, :holding_register, 40001, 3)
   end
 
   test "scans input registers" do
@@ -97,6 +99,7 @@ defmodule ModbusMqtt.Engine.ScannerTest do
 
     assert_receive {:read_input_registers, 11, 1, 5000, 1}
     assert_receive {:status, :clear_error, 11}
+    assert {:ok, [42]} = RegisterCache.get_words(11, :input_register, 5000, 1)
   end
 
   test "reports read errors without crashing" do
