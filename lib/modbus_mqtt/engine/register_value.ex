@@ -3,7 +3,17 @@ defmodule ModbusMqtt.Engine.RegisterValue do
   Pure helpers for decoding and scaling raw Modbus register values.
   """
 
+  import Bitwise
+
   alias Decimal, as: D
+
+  def word_count(%{data_type: :string, length: length}) when is_integer(length) and length > 0 do
+    div(length + 1, 2)
+  end
+
+  def word_count(%{length: length}) when is_integer(length) and length > 0, do: length
+
+  def word_count(%{data_type: data_type}), do: word_count(data_type)
 
   def word_count(:float32), do: 2
   def word_count(:int32), do: 2
@@ -62,6 +72,14 @@ defmodule ModbusMqtt.Engine.RegisterValue do
 
   def parse_value([1], :bool, _, _), do: true
   def parse_value([0], :bool, _, _), do: false
+
+  def parse_value(values, :string, _, _) when is_list(values) do
+    values
+    |> Enum.flat_map(fn word -> [word >>> 8 &&& 0xFF, word &&& 0xFF] end)
+    |> :binary.list_to_bin()
+    |> String.trim_trailing(<<0>>)
+  end
+
   def parse_value(values, _, _, _), do: values
 
   defp ordered_binary(first, second, swap_words, swap_bytes) do

@@ -31,7 +31,7 @@ registers = [
     swap_words: true,
     poll_interval_ms: 500
   },
-  %{address: 4990, name: "serial_number", data_type: :string},
+  %{address: 4990, name: "serial_number", data_type: :string, length: 10},
   %{
     address: 5008,
     data_type: :int16,
@@ -145,11 +145,20 @@ registers = [
 ]
 
 for reg <- registers do
+  data_type = Map.get(reg, :data_type, :uint16)
+
+  length =
+    Map.get(reg, :length) ||
+      case data_type do
+        dt when dt in [:int32, :uint32, :float32] -> 2
+        _ -> 1
+      end
+
   Repo.insert!(%Register{
     device_id: device.id,
     name: reg[:name],
     type: Map.get(reg, :type, :input_register),
-    data_type: Map.get(reg, :data_type, :uint16),
+    data_type: data_type,
     address: reg[:address],
     address_offset: -1,
     poll_interval_ms: Map.get(reg, :poll_interval_ms, 5000),
@@ -158,6 +167,7 @@ for reg <- registers do
     swap_words: Map.get(reg, :swap_words, false),
     swap_bytes: Map.get(reg, :swap_bytes, false),
     value_semantics: Map.get(reg, :value_semantics, :raw),
-    enum_map: Map.get(reg, :enum_map, %{})
+    enum_map: Map.get(reg, :enum_map, %{}),
+    length: length
   })
 end

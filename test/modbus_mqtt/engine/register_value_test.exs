@@ -31,4 +31,34 @@ defmodule ModbusMqtt.Engine.RegisterValueTest do
     assert RegisterValue.decode([1], register)
     refute RegisterValue.decode([0], register)
   end
+
+  describe "string registers" do
+    test "decodes ASCII string from words" do
+      # "AB" -> 0x4142, "CD" -> 0x4344
+      register = %{data_type: :string, length: 4, scale: 0, swap_words: false, swap_bytes: false}
+      assert RegisterValue.decode([0x4142, 0x4344], register) == "ABCD"
+    end
+
+    test "trims trailing null bytes from string" do
+      # "Hi" with 2 null padding bytes -> 0x4869, 0x0000
+      register = %{data_type: :string, length: 4, scale: 0, swap_words: false, swap_bytes: false}
+      assert RegisterValue.decode([0x4869, 0x0000], register) == "Hi"
+    end
+
+    test "word_count for string with even length" do
+      register = %{data_type: :string, length: 10}
+      assert RegisterValue.word_count(register) == 5
+    end
+
+    test "word_count for string with odd length" do
+      register = %{data_type: :string, length: 9}
+      assert RegisterValue.word_count(register) == 5
+    end
+
+    test "word_count for non-string register struct" do
+      assert RegisterValue.word_count(%{data_type: :uint32, length: 2}) == 2
+      assert RegisterValue.word_count(%{data_type: :uint16, length: 1}) == 1
+      assert RegisterValue.word_count(%{data_type: :float32, length: 2}) == 2
+    end
+  end
 end

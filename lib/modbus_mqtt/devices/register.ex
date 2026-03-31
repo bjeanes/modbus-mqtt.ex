@@ -24,6 +24,7 @@ defmodule ModbusMqtt.Devices.Register do
     field :swap_bytes, :boolean, default: false
     field :value_semantics, Ecto.Enum, values: [:raw, :enum], default: :raw
     field :enum_map, :map, default: %{}
+    field :length, :integer
 
     belongs_to :device, ModbusMqtt.Devices.Device
 
@@ -46,6 +47,7 @@ defmodule ModbusMqtt.Devices.Register do
       :swap_bytes,
       :value_semantics,
       :enum_map,
+      :length,
       :device_id
     ])
     |> validate_required([
@@ -64,6 +66,8 @@ defmodule ModbusMqtt.Devices.Register do
       :device_id
     ])
     |> validate_enum_semantics()
+    |> validate_string_length_field()
+    |> fill_length()
   end
 
   @doc """
@@ -96,6 +100,34 @@ defmodule ModbusMqtt.Devices.Register do
   end
 
   def parse_enum_key(_value), do: {:error, :invalid_enum_key}
+
+  defp validate_string_length_field(changeset) do
+    case get_field(changeset, :data_type) do
+      :string ->
+        changeset
+        |> validate_required([:length], message: "is required for string registers")
+        |> validate_number(:length, greater_than: 0)
+
+      _ ->
+        changeset
+    end
+  end
+
+  defp fill_length(changeset) do
+    case get_field(changeset, :data_type) do
+      :string ->
+        changeset
+
+      data_type when not is_nil(data_type) ->
+        put_change(changeset, :length, fixed_type_word_count(data_type))
+
+      _ ->
+        changeset
+    end
+  end
+
+  defp fixed_type_word_count(dt) when dt in [:float32, :int32, :uint32], do: 2
+  defp fixed_type_word_count(_), do: 1
 
   defp validate_enum_semantics(changeset) do
     case get_field(changeset, :value_semantics, :raw) do

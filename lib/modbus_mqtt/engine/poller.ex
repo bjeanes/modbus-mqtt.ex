@@ -41,12 +41,12 @@ defmodule ModbusMqtt.Engine.Poller do
 
     case reg.type do
       :holding_register ->
-        count = RegisterValue.word_count(reg.data_type)
+        count = RegisterValue.word_count(reg)
         res = connection.read_holding_registers(device.id, unit, addr, count)
         handle_response(res, state)
 
       :input_register ->
-        count = RegisterValue.word_count(reg.data_type)
+        count = RegisterValue.word_count(reg)
         res = connection.read_input_registers(device.id, unit, addr, count)
         handle_response(res, state)
 
