@@ -10,17 +10,19 @@ defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
   test "renders registers alphabetically with formatted value and update metadata", %{conn: conn} do
     device = device_fixture!("Boiler")
     field_zeta = field_fixture!(device, "zeta")
-    _field_alpha = field_fixture!(device, "alpha")
+    field_alpha = field_fixture!(device, "alpha")
 
     put_hub_reading!(device.id, field_zeta.name, 42, "42.0 C")
 
-    {:ok, _view, html} = live(conn, ~p"/devices/#{device.id}/dashboard")
+    {:ok, view, _html} = live(conn, ~p"/devices/#{device.id}/dashboard")
 
-    assert String.contains?(html, "alpha")
-    assert String.contains?(html, "zeta")
-    assert String.contains?(html, "42.0 C")
-    assert String.contains?(html, "just now")
-    assert String.contains?(html, "UTC")
+    assert has_element?(view, "#field-#{field_alpha.id}", "alpha")
+    assert has_element?(view, "#field-#{field_zeta.id}", "zeta")
+    assert has_element?(view, "#field-#{field_zeta.id}", "42.0 C")
+    assert has_element?(view, "#field-#{field_zeta.id}", "just now")
+    assert has_element?(view, "#device-dashboard", "UTC")
+
+    html = render(view)
     assert byte_index!(html, "alpha") < byte_index!(html, "zeta")
   end
 
