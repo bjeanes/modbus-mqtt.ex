@@ -59,4 +59,64 @@ defmodule ModbusMqtt.Engine.FieldCodecTest do
       assert FieldCodec.word_count(%{data_type: :float32, length: 2}) == 2
     end
   end
+
+  describe "bitmap fields" do
+    test "extracts single bit as boolean true" do
+      field = %{
+        data_type: :uint16,
+        scale: 0,
+        swap_words: false,
+        swap_bytes: false,
+        bit_mask: 0x0004
+      }
+
+      assert FieldCodec.decode([0x000F], field) == true
+    end
+
+    test "extracts single bit as boolean false" do
+      field = %{
+        data_type: :uint16,
+        scale: 0,
+        swap_words: false,
+        swap_bytes: false,
+        bit_mask: 0x0004
+      }
+
+      assert FieldCodec.decode([0x0003], field) == false
+    end
+
+    test "extracts high bit from uint16" do
+      field = %{
+        data_type: :uint16,
+        scale: 0,
+        swap_words: false,
+        swap_bytes: false,
+        bit_mask: 0x8000
+      }
+
+      assert FieldCodec.decode([0x8001], field) == true
+      assert FieldCodec.decode([0x7FFF], field) == false
+    end
+
+    test "works with multi-bit mask" do
+      field = %{
+        data_type: :uint16,
+        scale: 0,
+        swap_words: false,
+        swap_bytes: false,
+        bit_mask: 0x0003
+      }
+
+      # Bit 0 set → mask matches
+      assert FieldCodec.decode([0x0001], field) == true
+      # No bits from mask set
+      assert FieldCodec.decode([0x0004], field) == false
+    end
+
+    test "without bit_mask, returns integer as normal" do
+      field = %{data_type: :uint16, scale: 0, swap_words: false, swap_bytes: false}
+
+      assert FieldCodec.decode([0x000F], field) == 15
+    end
+  end
 end

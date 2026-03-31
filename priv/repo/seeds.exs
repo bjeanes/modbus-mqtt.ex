@@ -4,6 +4,7 @@
 
 alias ModbusMqtt.Repo
 alias ModbusMqtt.Devices.{Device, Field}
+import Bitwise
 
 # Clean existing to ensure idempotency when running seeds multiple times
 Repo.delete_all(Field)
@@ -141,7 +142,16 @@ fields = [
   %{address: 13036, data_type: :uint16, name: "daily_import_energy", scale: -1},
   %{address: 13037, data_type: :uint32, swap_words: true, name: "total_import_energy", scale: -1},
   %{address: 13040, data_type: :uint16, name: "daily_charge_energy", scale: -1},
-  %{address: 13041, data_type: :uint32, swap_words: true, name: "total_charge_energy", scale: -1}
+  %{address: 13041, data_type: :uint32, swap_words: true, name: "total_charge_energy", scale: -1},
+
+  # Bitmap fields: multiple boolean fields derived from the same underlying register (13001)
+  %{address: 13001, data_type: :uint16, name: "state_generating", bit_mask: 1 <<< 0},
+  %{address: 13001, data_type: :uint16, name: "state_charging", bit_mask: 1 <<< 1},
+  %{address: 13001, data_type: :uint16, name: "state_discharging", bit_mask: 1 <<< 2},
+  %{address: 13001, data_type: :uint16, name: "state_positive_load_power", bit_mask: 1 <<< 3},
+  %{address: 13001, data_type: :uint16, name: "state_exporting", bit_mask: 1 <<< 4},
+  %{address: 13001, data_type: :uint16, name: "state_importing", bit_mask: 1 <<< 5},
+  %{address: 13001, data_type: :uint16, name: "state_negative_load_power", bit_mask: 1 <<< 7}
 ]
 
 for field <- fields do
@@ -168,6 +178,7 @@ for field <- fields do
     swap_bytes: Map.get(field, :swap_bytes, false),
     value_semantics: Map.get(field, :value_semantics, :raw),
     enum_map: Map.get(field, :enum_map, %{}),
+    bit_mask: Map.get(field, :bit_mask),
     length: length
   })
 end

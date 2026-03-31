@@ -65,6 +65,59 @@ defmodule ModbusMqtt.Devices.FieldTest do
     assert "must contain at least one entry" in errors_on(changeset).enum_map
   end
 
+  describe "bitmap fields" do
+    test "accepts valid bitmap field" do
+      changeset = Field.changeset(%Field{}, bitmap_attrs(%{bit_mask: 0x0001}))
+      assert changeset.valid?
+    end
+
+    test "rejects non-integer data type with bit_mask" do
+      changeset = Field.changeset(%Field{}, bitmap_attrs(%{bit_mask: 0x0001, data_type: :string}))
+      refute changeset.valid?
+      assert "must be an integer type when bit_mask is set" in errors_on(changeset).data_type
+    end
+
+    test "rejects non-zero scale with bit_mask" do
+      changeset = Field.changeset(%Field{}, bitmap_attrs(%{bit_mask: 0x0001, scale: -1}))
+      refute changeset.valid?
+      assert "must be 0 when bit_mask is set" in errors_on(changeset).scale
+    end
+
+    test "rejects bit_mask of zero" do
+      changeset = Field.changeset(%Field{}, bitmap_attrs(%{bit_mask: 0}))
+      refute changeset.valid?
+      assert "must be greater than 0" in errors_on(changeset).bit_mask
+    end
+
+    test "rejects coil type with bit_mask" do
+      changeset = Field.changeset(%Field{}, bitmap_attrs(%{bit_mask: 0x0001, type: :coil}))
+      refute changeset.valid?
+
+      assert "must be input_register or holding_register when bit_mask is set" in errors_on(
+               changeset
+             ).type
+    end
+  end
+
+  defp bitmap_attrs(overrides) do
+    %{
+      name: "state_flag",
+      type: :input_register,
+      data_type: :uint16,
+      address: 13000,
+      address_offset: 0,
+      poll_interval_ms: 5000,
+      writable: false,
+      scale: 0,
+      swap_words: false,
+      swap_bytes: false,
+      value_semantics: :raw,
+      enum_map: %{},
+      device_id: 1
+    }
+    |> Map.merge(overrides)
+  end
+
   defp valid_attrs(enum_map) do
     %{
       name: "mode",

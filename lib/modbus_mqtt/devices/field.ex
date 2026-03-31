@@ -24,6 +24,7 @@ defmodule ModbusMqtt.Devices.Field do
     field :swap_bytes, :boolean, default: false
     field :value_semantics, Ecto.Enum, values: [:raw, :enum], default: :raw
     field :enum_map, :map, default: %{}
+    field :bit_mask, :integer
     field :length, :integer
 
     belongs_to :device, ModbusMqtt.Devices.Device
@@ -47,6 +48,7 @@ defmodule ModbusMqtt.Devices.Field do
       :swap_bytes,
       :value_semantics,
       :enum_map,
+      :bit_mask,
       :length,
       :device_id
     ])
@@ -66,6 +68,7 @@ defmodule ModbusMqtt.Devices.Field do
       :device_id
     ])
     |> validate_enum_semantics()
+    |> validate_bitmap_field()
     |> validate_string_length_field()
     |> fill_length()
   end
@@ -128,6 +131,26 @@ defmodule ModbusMqtt.Devices.Field do
 
   defp fixed_type_word_count(dt) when dt in [:float32, :int32, :uint32], do: 2
   defp fixed_type_word_count(_), do: 1
+
+  @integer_data_types [:uint16, :int16, :uint32, :int32]
+
+  defp validate_bitmap_field(changeset) do
+    case get_field(changeset, :bit_mask) do
+      nil ->
+        changeset
+
+      _bit_mask ->
+        changeset
+        |> validate_inclusion(:data_type, @integer_data_types,
+          message: "must be an integer type when bit_mask is set"
+        )
+        |> validate_inclusion(:type, @enum_register_types,
+          message: "must be input_register or holding_register when bit_mask is set"
+        )
+        |> validate_number(:scale, equal_to: 0, message: "must be 0 when bit_mask is set")
+        |> validate_number(:bit_mask, greater_than: 0, message: "must be greater than 0")
+    end
+  end
 
   defp validate_enum_semantics(changeset) do
     case get_field(changeset, :value_semantics, :raw) do

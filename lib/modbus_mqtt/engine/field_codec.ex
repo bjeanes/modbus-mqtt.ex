@@ -24,6 +24,7 @@ defmodule ModbusMqtt.Engine.FieldCodec do
     values
     |> parse_value(field.data_type, field.swap_words, field.swap_bytes)
     |> scale(field.scale)
+    |> extract_bits(field)
   end
 
   def scale(value, scale) when is_number(value) and scale != 0 do
@@ -98,4 +99,11 @@ defmodule ModbusMqtt.Engine.FieldCodec do
     <<swapped::16>> = <<byte_two, byte_one>>
     swapped
   end
+
+  defp extract_bits(decoded, %{bit_mask: bit_mask})
+       when is_integer(bit_mask) and is_integer(decoded) do
+    (decoded &&& bit_mask) != 0
+  end
+
+  defp extract_bits(decoded, _field), do: decoded
 end

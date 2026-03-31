@@ -104,4 +104,28 @@ defmodule ModbusMqtt.Engine.FieldReadingTest do
     assert reading.value == "maintenance"
     assert reading.formatted == "maintenance"
   end
+
+  test "bitmap field produces boolean reading from register word" do
+    field = %{
+      type: :input_register,
+      data_type: :uint16,
+      scale: 0,
+      swap_words: false,
+      swap_bytes: false,
+      value_semantics: :raw,
+      enum_map: %{},
+      bit_mask: 0x0004
+    }
+
+    reading_true = FieldReading.from_modbus([0x000F], field)
+    reading_false = FieldReading.from_modbus([0x0003], field)
+
+    assert reading_true.decoded == true
+    assert reading_true.value == true
+    assert reading_true.formatted == "true"
+
+    assert reading_false.decoded == false
+    assert reading_false.value == false
+    assert reading_false.formatted == "false"
+  end
 end
