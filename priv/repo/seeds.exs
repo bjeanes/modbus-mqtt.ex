@@ -3,6 +3,7 @@
 #     mix run priv/repo/seeds.exs
 
 alias ModbusMqtt.Repo
+alias ModbusMqtt.Devices
 alias ModbusMqtt.Devices.{Device, Field}
 import Bitwise
 
@@ -238,32 +239,12 @@ fields = [
   %{address: 13001, data_type: :uint16, name: "state_negative_load_power", bit_mask: 1 <<< 7}
 ]
 
-for field <- fields do
-  data_type = Map.get(field, :data_type, :uint16)
+for field_attrs <- fields do
+  attrs =
+    field_attrs
+    |> Map.put_new(:type, :input_register)
+    |> Map.put_new(:address_offset, -1)
+    |> Map.put_new(:writable, Map.get(field_attrs, :type) == :holding_register)
 
-  length =
-    Map.get(field, :length) ||
-      case data_type do
-        dt when dt in [:int32, :uint32, :float32] -> 2
-        _ -> 1
-      end
-
-  Repo.insert!(%Field{
-    device_id: device.id,
-    name: field[:name],
-    type: Map.get(field, :type, :input_register),
-    data_type: data_type,
-    address: field[:address],
-    address_offset: -1,
-    poll_interval_ms: Map.get(field, :poll_interval_ms, 5000),
-    writable: Map.get(field, :type) == :holding_register,
-    scale: Map.get(field, :scale, 0),
-    swap_words: Map.get(field, :swap_words, false),
-    swap_bytes: Map.get(field, :swap_bytes, false),
-    value_semantics: Map.get(field, :value_semantics, :raw),
-    enum_map: Map.get(field, :enum_map, %{}),
-    unit: Map.get(field, :unit),
-    bit_mask: Map.get(field, :bit_mask),
-    length: length
-  })
+  {:ok, _} = Devices.create_field(device.id, attrs)
 end
