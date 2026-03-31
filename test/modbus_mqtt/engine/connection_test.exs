@@ -2,23 +2,7 @@ defmodule ModbusMqtt.Engine.ConnectionTest do
   use ExUnit.Case, async: false
 
   alias ModbusMqtt.Engine.Connection
-
-  defmodule FakeStatus do
-    def device_connecting(device), do: send(device.test_pid, {:status, :connecting, device.id})
-    def device_connected(device), do: send(device.test_pid, {:status, :connected, device.id})
-
-    def device_retrying_connection(device, attempt) do
-      send(device.test_pid, {:status, :retrying_connection, device.id, attempt})
-    end
-
-    def device_connection_failed(device, message) do
-      send(device.test_pid, {:status, :connection_failed, device.id, message})
-    end
-
-    def device_disconnected(device, reason) do
-      send(device.test_pid, {:status, :disconnected, device.id, reason})
-    end
-  end
+  alias ModbusMqtt.TestSupport.FakeConnectionStatus, as: FakeStatus
 
   defmodule FakeClient do
     @behaviour ModbusMqtt.Client
@@ -69,6 +53,53 @@ defmodule ModbusMqtt.Engine.ConnectionTest do
     def read_discrete_inputs(_pid, _unit, _address, _count), do: {:error, :enotconn}
     def read_holding_registers(_pid, _unit, _address, _count), do: {:error, :enotconn}
     def read_input_registers(_pid, _unit, _address, _count), do: {:error, :enotconn}
+  end
+
+  defmodule FakeClientWithRetries do
+    @behaviour ModbusMqtt.Client
+
+    def open(config) do
+      call_count_pid = config["call_count_pid"]
+      current_count = Agent.get(call_count_pid, & &1)
+      Agent.update(call_count_pid, &(&1 + 1))
+
+      if current_count < 2 do
+        {:error, :temporary_failure}
+      else
+        Agent.start_link(fn -> config end)
+      end
+    end
+
+    def close(pid) do
+      config = Agent.get(pid, & &1)
+      send(config["test_pid"], {:client_close, config["device_id"]})
+      Agent.stop(pid)
+      :ok
+    end
+
+    def read_holding_registers(pid, unit, address, count) do
+      config = Agent.get(pid, & &1)
+      send(config["test_pid"], {:read_holding_registers, unit, address, count})
+      {:ok, config["read_values"] || [123]}
+    end
+
+    def read_coils(_pid, _unit, _address, _count), do: {:ok, []}
+    def read_discrete_inputs(_pid, _unit, _address, _count), do: {:ok, []}
+    def read_input_registers(_pid, _unit, _address, _count), do: {:ok, []}
+  end
+
+  defmodule FakeClientAlwaysFails do
+    @behaviour ModbusMqtt.Client
+
+    def open(_config) do
+      {:error, :permanent_failure}
+    end
+
+    def close(_pid), do: :ok
+    def read_holding_registers(_pid, _unit, _address, _count), do: {:ok, []}
+    def read_coils(_pid, _unit, _address, _count), do: {:ok, []}
+    def read_discrete_inputs(_pid, _unit, _address, _count), do: {:ok, []}
+    def read_input_registers(_pid, _unit, _address, _count), do: {:ok, []}
   end
 
   test "returns an error when the connection process is absent" do
@@ -141,41 +172,6 @@ defmodule ModbusMqtt.Engine.ConnectionTest do
     # State variable to track how many times open was called
     {:ok, call_count} = Agent.start_link(fn -> 0 end)
 
-    defmodule FakeClientWithRetries do
-      @behaviour ModbusMqtt.Client
-
-      def open(config) do
-        call_count_pid = config["call_count_pid"]
-        current_count = Agent.get(call_count_pid, & &1)
-        Agent.update(call_count_pid, &(&1 + 1))
-
-        if current_count < 2 do
-          # Fail the first 2 attempts
-          {:error, :temporary_failure}
-        else
-          # Succeed on the 3rd attempt
-          Agent.start_link(fn -> config end)
-        end
-      end
-
-      def close(pid) do
-        config = Agent.get(pid, & &1)
-        send(config["test_pid"], {:client_close, config["device_id"]})
-        Agent.stop(pid)
-        :ok
-      end
-
-      def read_holding_registers(pid, unit, address, count) do
-        config = Agent.get(pid, & &1)
-        send(config["test_pid"], {:read_holding_registers, unit, address, count})
-        {:ok, config["read_values"] || [123]}
-      end
-
-      def read_coils(_pid, _unit, _address, _count), do: {:ok, []}
-      def read_discrete_inputs(_pid, _unit, _address, _count), do: {:ok, []}
-      def read_input_registers(_pid, _unit, _address, _count), do: {:ok, []}
-    end
-
     device = %{
       id: device_id,
       name: "Retry Device",
@@ -221,20 +217,6 @@ defmodule ModbusMqtt.Engine.ConnectionTest do
     on_exit(fn -> Process.flag(:trap_exit, trap_exit?) end)
 
     device_id = System.unique_integer([:positive])
-
-    defmodule FakeClientAlwaysFails do
-      @behaviour ModbusMqtt.Client
-
-      def open(_config) do
-        {:error, :permanent_failure}
-      end
-
-      def close(_pid), do: :ok
-      def read_holding_registers(_pid, _unit, _address, _count), do: {:ok, []}
-      def read_coils(_pid, _unit, _address, _count), do: {:ok, []}
-      def read_discrete_inputs(_pid, _unit, _address, _count), do: {:ok, []}
-      def read_input_registers(_pid, _unit, _address, _count), do: {:ok, []}
-    end
 
     device = %{
       id: device_id,
