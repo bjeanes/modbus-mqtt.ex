@@ -2,6 +2,6 @@ defmodule ModbusMqttWeb.PageController do
   use ModbusMqttWeb, :controller
 
   def home(conn, _params) do
-    render(conn, :home)
+    redirect(conn, to: ~p"/dashboards")
   end
 end

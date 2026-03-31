@@ -51,14 +51,41 @@ defmodule ModbusMqtt.Engine.Hub do
   end
 
   def get_device_state(table, device_id) do
+    get_device_readings(table, device_id)
+    |> Map.new(fn {field_name, reading} -> {field_name, reading.value} end)
+  end
+
+  @doc "Retrieves the latest known reading map for an entire device"
+  def get_device_readings(device_id) do
+    get_device_readings(@table, device_id)
+  end
+
+  def get_device_readings(table, device_id) do
     # Search ETS for all keys matching {device_id, _}
-    match_spec = [{{{device_id, :"$1"}, :"$2", :_}, [], [{{:"$1", :"$2"}}]}]
+    match_spec = [{{{device_id, :"$1"}, :"$2", :"$3"}, [], [{{:"$1", :"$2", :"$3"}}]}]
 
     :ets.select(table, match_spec)
-    |> Enum.map(fn {field_name, reading} ->
-      {field_name, reading.value}
+    |> Enum.map(fn {field_name, reading, updated_at} ->
+      {field_name, %{value: reading.value, formatted: reading.formatted, updated_at: updated_at}}
     end)
     |> Map.new()
+  end
+
+  @doc "Retrieves the latest known reading for a single field on a device"
+  def get_field_reading(device_id, field_name) do
+    get_field_reading(@table, device_id, field_name)
+  end
+
+  def get_field_reading(table, device_id, field_name) do
+    key = {device_id, field_name}
+
+    case :ets.lookup(table, key) do
+      [{^key, reading, updated_at}] ->
+        %{value: reading.value, formatted: reading.formatted, updated_at: updated_at}
+
+      [] ->
+        nil
+    end
   end
 
   @impl true

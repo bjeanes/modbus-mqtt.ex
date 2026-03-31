@@ -36,6 +36,16 @@ defmodule ModbusMqtt.Engine.HubTest do
     assert Jason.decode!(detail_payload) == %{"bytes" => [0, 10], "decoded" => 10, "value" => 10}
     assert Hub.get_device_state(table, 7) == %{"power" => 10}
 
+    assert Hub.get_device_readings(table, 7) == %{
+             "power" => %{value: 10, formatted: "10", updated_at: ~U[2026-03-31 12:00:00Z]}
+           }
+
+    assert Hub.get_field_reading(table, 7, "power") == %{
+             value: 10,
+             formatted: "10",
+             updated_at: ~U[2026-03-31 12:00:00Z]
+           }
+
     same_bytes_different_derived = %{
       bytes: [0, 10],
       decoded: 10,

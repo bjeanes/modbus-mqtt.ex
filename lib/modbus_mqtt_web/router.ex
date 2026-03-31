@@ -18,6 +18,8 @@ defmodule ModbusMqttWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
+    live "/dashboards", DeviceDashboardIndexLive
+    live "/devices/:id/dashboard", DeviceDashboardLive
   end
 
   # Other scopes may use custom stacks.
