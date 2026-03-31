@@ -72,7 +72,7 @@ fields = [
   %{address: 13021, name: "battery_current", poll_interval_ms: 500, data_type: :int16, scale: -1},
   %{address: 13023, name: "battery_level", poll_interval_ms: 60_000, scale: -1},
   %{address: 13024, name: "battery_health", poll_interval_ms: 600_000, scale: -1},
-  %{address: 5036, name: "grid_frequency", poll_interval_ms: 60_000, scale: -2},
+  %{address: 5036, name: "grid_frequency", poll_interval_ms: 60_000, scale: -1},
   %{address: 5019, name: "phase_a_voltage", poll_interval_ms: 60_000, scale: -1},
   %{address: 13031, name: "phase_a_current", poll_interval_ms: 60_000, scale: -1},
   %{address: 5011, name: "mppt1_voltage", scale: -1},
