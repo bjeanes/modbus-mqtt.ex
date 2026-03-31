@@ -45,8 +45,18 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
     {:noreply, socket}
   end
 
-  def handle_info({:clear_flash_field, field_name}, socket) do
-    {:noreply, update(socket, :flashed_fields, &MapSet.delete(&1, field_name))}
+  def handle_info({:clear_flash_field, field_name, timer_ref}, socket) do
+    case Map.get(socket.assigns.flash_timers, field_name) do
+      ^timer_ref ->
+        {:noreply,
+         socket
+         |> update(:flashed_fields, &MapSet.delete(&1, field_name))
+         |> update(:flash_timers, &Map.delete(&1, field_name))}
+
+      _ ->
+        # Ignore stale timer messages from superseded flashes.
+        {:noreply, socket}
+    end
   end
 
   def handle_info(:tick, socket) do
@@ -140,6 +150,7 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
                 <% flashing? = MapSet.member?(@flashed_fields, field.name) %>
                 <tr
                   id={"field-#{field.id}"}
+                  data-flashing={to_string(flashing?)}
                   class={[
                     "transition-colors duration-700",
                     flashing? && "bg-amber-100/70"
@@ -222,6 +233,7 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
          |> assign(:readings, readings)
          |> assign(:numeric_history, build_initial_numeric_history(fields, readings, now))
          |> assign(:flashed_fields, MapSet.new())
+         |> assign(:flash_timers, %{})
          |> assign(:now, now)}
 
       _ ->
@@ -469,8 +481,17 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
   defp sort_mode_value(_), do: "alphabetical"
 
   defp put_flash_field(socket, field_name) do
-    Process.send_after(self(), {:clear_flash_field, field_name}, @flash_ms)
-    update(socket, :flashed_fields, &MapSet.put(&1, field_name))
+    case Map.get(socket.assigns.flash_timers, field_name) do
+      nil -> :ok
+      timer_ref -> Process.cancel_timer(timer_ref, async: true, info: false)
+    end
+
+    clear_ref = make_ref()
+    Process.send_after(self(), {:clear_flash_field, field_name, clear_ref}, @flash_ms)
+
+    socket
+    |> update(:flashed_fields, &MapSet.put(&1, field_name))
+    |> update(:flash_timers, &Map.put(&1, field_name, clear_ref))
   end
 
   defp formatted_value(nil), do: "--"

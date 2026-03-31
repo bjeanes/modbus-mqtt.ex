@@ -39,7 +39,28 @@ defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
     )
 
     wait_for(fn -> has_element?(view, "#field-#{field.id}", "1 bar") end)
-    wait_for(fn -> String.contains?(render(view), "bg-amber-100/70") end)
+    wait_for(fn -> has_flashing_row?(view, field.id) end)
+  end
+
+  test "keeps field highlighted until the most recent flash timer expires", %{conn: conn} do
+    device = device_fixture!("Inverter")
+    field = field_fixture!(device, "power")
+
+    {:ok, view, _html} = live(conn, ~p"/devices/#{device.id}/dashboard")
+
+    emit_update(device.id, field.name, 10, "10 W")
+    wait_for(fn -> has_flashing_row?(view, field.id) end)
+
+    # Emit another update halfway through the first flash window.
+    Process.sleep(100)
+    emit_update(device.id, field.name, 11, "11 W")
+
+    # Past the first timer, but still within the second timer.
+    Process.sleep(130)
+    assert has_flashing_row?(view, field.id)
+
+    # After the second timer should have elapsed, the highlight clears.
+    wait_for(fn -> not has_flashing_row?(view, field.id) end)
   end
 
   test "renders sparkline for numeric values only", %{conn: conn} do
@@ -173,6 +194,10 @@ defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
       "device:#{device_id}",
       {:field_update, field_name, value}
     )
+  end
+
+  defp has_flashing_row?(view, field_id) do
+    has_element?(view, "#field-#{field_id}[data-flashing='true']")
   end
 
   defp assert_row_order(html, field_ids) do
