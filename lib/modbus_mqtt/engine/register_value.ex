@@ -3,6 +3,8 @@ defmodule ModbusMqtt.Engine.RegisterValue do
   Pure helpers for decoding and scaling raw Modbus register values.
   """
 
+  alias Decimal, as: D
+
   def word_count(:float32), do: 2
   def word_count(:int32), do: 2
   def word_count(:uint32), do: 2
@@ -15,10 +17,26 @@ defmodule ModbusMqtt.Engine.RegisterValue do
   end
 
   def scale(value, scale) when is_number(value) and scale != 0 do
-    value * :math.pow(10, scale)
+    factor = scale_factor(scale)
+
+    value
+    |> to_decimal()
+    |> D.mult(factor)
+    |> D.normalize()
   end
 
   def scale(value, _scale), do: value
+
+  defp scale_factor(scale) when scale > 0 do
+    D.new(Integer.pow(10, scale))
+  end
+
+  defp scale_factor(scale) when scale < 0 do
+    D.div(D.new(1), D.new(Integer.pow(10, -scale)))
+  end
+
+  defp to_decimal(value) when is_integer(value), do: D.new(value)
+  defp to_decimal(value) when is_float(value), do: D.from_float(value)
 
   def parse_value([value], :uint16, _, _), do: value
 

@@ -1,6 +1,7 @@
 defmodule ModbusMqtt.Engine.RegisterValueTest do
   use ExUnit.Case, async: true
 
+  alias Decimal, as: D
   alias ModbusMqtt.Engine.RegisterValue
 
   test "decodes signed 16-bit values" do
@@ -15,10 +16,13 @@ defmodule ModbusMqtt.Engine.RegisterValueTest do
     assert RegisterValue.decode([0x0000, 0x803F], register) == 1.0
   end
 
-  test "scales numeric values" do
+  test "scales numeric values with Decimal" do
     register = %{data_type: :uint16, scale: -1, swap_words: false, swap_bytes: false}
 
-    assert RegisterValue.decode([123], register) == 12.3
+    value = RegisterValue.decode([123], register)
+
+    assert match?(%Decimal{}, value)
+    assert D.equal?(value, D.new("12.3"))
   end
 
   test "decodes boolean coil values" do

@@ -22,9 +22,12 @@ defmodule ModbusMqtt.Engine.RegisterReading do
     %__MODULE__{
       bytes: bytes_from_values(values, register.type),
       value: value,
-      formatted: to_string(value)
+      formatted: format_value(value)
     }
   end
+
+  defp format_value(%Decimal{} = value), do: Decimal.to_string(value, :normal)
+  defp format_value(value), do: to_string(value)
 
   defp bytes_from_values(values, type) when type in [:holding_register, :input_register] do
     Enum.flat_map(values, fn word ->

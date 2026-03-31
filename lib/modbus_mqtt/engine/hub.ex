@@ -89,7 +89,10 @@ defmodule ModbusMqtt.Engine.Hub do
       detail_topic = Topics.device_value_detail_topic(device, register)
 
       detail_payload =
-        Jason.encode!(%{"bytes" => normalized_reading.bytes, "value" => normalized_reading.value})
+        Jason.encode!(%{
+          "bytes" => normalized_reading.bytes,
+          "value" => json_value(normalized_reading.value)
+        })
 
       state.publish_fun.(detail_topic, detail_payload, [])
 
@@ -108,6 +111,9 @@ defmodule ModbusMqtt.Engine.Hub do
   defp normalize_reading(value) do
     %{bytes: [], value: value, formatted: to_string(value)}
   end
+
+  defp json_value(%Decimal{} = value), do: Decimal.to_float(value)
+  defp json_value(value), do: value
 
   def publish_mqtt(topic, payload, opts) do
     ModbusMqtt.Mqtt.Supervisor.publish(topic, payload, opts)

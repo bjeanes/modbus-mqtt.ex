@@ -1,6 +1,7 @@
 defmodule ModbusMqtt.Engine.PollerTest do
   use ExUnit.Case, async: false
 
+  alias Decimal, as: D
   alias ModbusMqtt.Engine.Poller
 
   defmodule FakeStatus do
@@ -85,8 +86,9 @@ defmodule ModbusMqtt.Engine.PollerTest do
     assert_receive {:status, :clear_error, 10}
     assert_receive {:put_value, 10, "power", reading}
     assert reading.bytes == [0, 12]
-    assert reading.value == 120.0
-    assert reading.formatted == "120.0"
+    assert match?(%Decimal{}, reading.value)
+    assert D.equal?(reading.value, D.new("120"))
+    assert reading.formatted == "120"
   end
 
   test "reports read errors without crashing" do
