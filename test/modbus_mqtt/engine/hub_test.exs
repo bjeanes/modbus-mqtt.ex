@@ -4,7 +4,7 @@ defmodule ModbusMqtt.Engine.HubTest do
   alias Decimal, as: D
   alias ModbusMqtt.Engine.Hub
 
-  test "publishes and broadcasts only when a value changes" do
+  test "always refreshes cache and publishes when bytes or value changes" do
     test_pid = self()
     server = String.to_atom("hub_server_#{System.unique_integer([:positive])}")
     table = String.to_atom("hub_table_#{System.unique_integer([:positive])}")
@@ -52,6 +52,24 @@ defmodule ModbusMqtt.Engine.HubTest do
       value: "running",
       formatted: "running"
     }
+
+    Hub.put_value(server, device, field, same_bytes_different_derived)
+
+    assert_receive {:broadcast, 7, "power", "running"}
+    assert_receive {:published, "modbus_mqtt/7/power", "running", []}
+    assert_receive {:published, "modbus_mqtt/7/power/detail", detail_payload_2, []}
+
+    assert Jason.decode!(detail_payload_2) == %{
+             "bytes" => [0, 10],
+             "decoded" => 10,
+             "value" => "running"
+           }
+
+    assert Hub.get_field_reading(table, 7, "power") == %{
+             value: "running",
+             formatted: "running",
+             updated_at: ~U[2026-03-31 12:00:00Z]
+           }
 
     Hub.put_value(server, device, field, same_bytes_different_derived)
 

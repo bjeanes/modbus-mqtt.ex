@@ -89,60 +89,45 @@ defmodule ModbusMqtt.Engine.Hub do
   end
 
   @impl true
-  def handle_cast({:put_value, device, field, reading}, state) do
+  def handle_cast({:put_value, device, field, %{bytes: bytes, value: value} = reading}, state) do
     key = {device.id, field.name}
-
-    normalized_reading = normalize_reading(reading)
 
     changed? =
       case :ets.lookup(state.table, key) do
-        [{^key, existing_reading, _updated_at}] ->
-          existing_reading.bytes != normalized_reading.bytes
+        [{^key, %{bytes: ^bytes, value: ^value}, _updated_at}] ->
+          false
 
-        [] ->
+        _ ->
           true
       end
 
-    if changed? do
-      # 1. Update ETS
-      :ets.insert(state.table, {key, normalized_reading, state.now_fun.()})
+    # Always refresh cached reading and timestamp so the dashboard reflects
+    # the latest computed state, even when outbound publish is suppressed.
+    :ets.insert(state.table, {key, reading, state.now_fun.()})
 
+    if changed? do
       # 2. Phoenix PubSub Broadcast for Real-Time Web UI
-      state.broadcast_fun.(ModbusMqtt.PubSub, device.id, field.name, normalized_reading.value)
+      state.broadcast_fun.(ModbusMqtt.PubSub, device.id, field.name, reading.value)
 
       # 3. Publish out to Tortoise311
       topic = Topics.device_value_topic(device, field)
-      state.publish_fun.(topic, FieldSemantics.format(normalized_reading.value), [])
+      state.publish_fun.(topic, FieldSemantics.format(reading.value), [])
 
       detail_topic = Topics.device_value_detail_topic(device, field)
 
       detail_payload =
         Jason.encode!(%{
-          "bytes" => normalized_reading.bytes,
-          "decoded" => json_value(normalized_reading.decoded),
-          "value" => json_value(normalized_reading.value)
+          "bytes" => reading.bytes,
+          "decoded" => json_value(reading.decoded),
+          "value" => json_value(reading.value)
         })
 
       state.publish_fun.(detail_topic, detail_payload, [])
 
-      Logger.debug(
-        "Hub Delta: #{device.name}:#{field.name} changed to #{normalized_reading.formatted}"
-      )
+      Logger.debug("Hub Delta: #{device.name}:#{field.name} changed to #{reading.formatted}")
     end
 
     {:noreply, state}
-  end
-
-  defp normalize_reading(%{bytes: bytes, decoded: decoded, value: value, formatted: formatted}) do
-    %{bytes: bytes, decoded: decoded, value: value, formatted: formatted}
-  end
-
-  defp normalize_reading(%{bytes: bytes, value: value, formatted: formatted}) do
-    %{bytes: bytes, decoded: value, value: value, formatted: formatted}
-  end
-
-  defp normalize_reading(value) do
-    %{bytes: [], decoded: value, value: value, formatted: FieldSemantics.format(value)}
   end
 
   defp json_value(%Decimal{} = value), do: Jason.Fragment.new(Decimal.to_string(value, :normal))
