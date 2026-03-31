@@ -48,7 +48,7 @@ defmodule ModbusMqtt.Engine.DeviceSupervisor do
 
     children = children ++ pollers
 
-    # One-for-all strategy implies that if the connection dies, we want the pollers 
+    # One-for-all strategy implies that if the connection dies, we want the pollers
     # to restart, and if pollers crash continuously, we restart the connection too.
     # Rest_for_one pushes restarts downwards (e.g. if the connection dies, the pollers restart).
     Supervisor.init(children, strategy: :rest_for_one)
