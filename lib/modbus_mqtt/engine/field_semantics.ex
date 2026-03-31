@@ -15,6 +15,19 @@ defmodule ModbusMqtt.Engine.FieldSemantics do
   def format(value) when is_binary(value), do: value
   def format(value), do: to_string(value)
 
+  def format(value, field) do
+    if numeric_value?(value) do
+      unformatted = format(value)
+
+      case measurement_unit(field) do
+        nil -> unformatted
+        unit -> unformatted <> " " <> unit
+      end
+    else
+      format(value)
+    end
+  end
+
   def normalized_enum_map(field) do
     field
     |> Map.get(:enum_map, %{})
@@ -57,4 +70,21 @@ defmodule ModbusMqtt.Engine.FieldSemantics do
   end
 
   defp enum_value(decoded, _field), do: to_string(decoded)
+
+  defp measurement_unit(%{unit: unit}) when is_binary(unit) do
+    trimmed = String.trim(unit)
+
+    if trimmed == "" do
+      nil
+    else
+      trimmed
+    end
+  end
+
+  defp measurement_unit(_field), do: nil
+
+  defp numeric_value?(%Decimal{}), do: true
+  defp numeric_value?(value) when is_integer(value), do: true
+  defp numeric_value?(value) when is_float(value), do: true
+  defp numeric_value?(_value), do: false
 end

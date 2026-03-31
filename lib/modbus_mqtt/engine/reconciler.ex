@@ -223,7 +223,8 @@ defmodule ModbusMqtt.Engine.Reconciler do
       swap_words: field.swap_words,
       swap_bytes: field.swap_bytes,
       value_semantics: field.value_semantics,
-      enum_map: field.enum_map || %{}
+      enum_map: field.enum_map || %{},
+      unit: Map.get(field, :unit)
     }
   end
 end

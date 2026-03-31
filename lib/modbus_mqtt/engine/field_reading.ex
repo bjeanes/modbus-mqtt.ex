@@ -26,7 +26,7 @@ defmodule ModbusMqtt.Engine.FieldReading do
       bytes: bytes_from_values(values, field.type),
       decoded: decoded,
       value: value,
-      formatted: FieldSemantics.format(value)
+      formatted: FieldSemantics.format(value, field)
     }
   end
 

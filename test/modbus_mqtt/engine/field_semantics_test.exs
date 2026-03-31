@@ -27,4 +27,17 @@ defmodule ModbusMqtt.Engine.FieldSemanticsTest do
     assert FieldSemantics.format(D.new("12.3")) == "12.3"
     assert FieldSemantics.format("maintenance") == "maintenance"
   end
+
+  test "formats numeric values with unit when field includes unit" do
+    field = %{unit: "°C"}
+
+    assert FieldSemantics.format(12345.67, field) == "12345.67 °C"
+    assert FieldSemantics.format(D.new("9876.5"), field) == "9876.5 °C"
+  end
+
+  test "does not append unit for non-numeric semantic values" do
+    field = %{unit: "%"}
+
+    assert FieldSemantics.format("maintenance", field) == "maintenance"
+  end
 end

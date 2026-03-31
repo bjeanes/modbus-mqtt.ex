@@ -3,6 +3,8 @@ defmodule ModbusMqtt.Devices.Field do
   import Ecto.Changeset
 
   @enum_register_types [:holding_register, :input_register]
+  @numeric_data_types [:int16, :uint16, :int32, :uint32, :float32]
+  @unit_presets ["°C", "°F", "%", "V", "A", "W", "kWh", "Hz"]
 
   schema "fields" do
     field :name, :string
@@ -24,6 +26,7 @@ defmodule ModbusMqtt.Devices.Field do
     field :swap_bytes, :boolean, default: false
     field :value_semantics, Ecto.Enum, values: [:raw, :enum], default: :raw
     field :enum_map, :map, default: %{}
+    field :unit, :string
     field :bit_mask, :integer
     field :length, :integer
 
@@ -48,6 +51,7 @@ defmodule ModbusMqtt.Devices.Field do
       :swap_bytes,
       :value_semantics,
       :enum_map,
+      :unit,
       :bit_mask,
       :length,
       :device_id
@@ -67,11 +71,17 @@ defmodule ModbusMqtt.Devices.Field do
       :enum_map,
       :device_id
     ])
+    |> normalize_unit()
     |> validate_enum_semantics()
     |> validate_bitmap_field()
     |> validate_string_length_field()
+    |> validate_measurement_unit()
     |> fill_length()
   end
+
+  @doc "Returns common measurement unit presets for numeric fields"
+  @spec unit_presets() :: [String.t()]
+  def unit_presets, do: @unit_presets
 
   @doc """
   Parses enum map keys from decimal (`100`), hex (`0xAA`), or binary (`0b1010`).
@@ -150,6 +160,49 @@ defmodule ModbusMqtt.Devices.Field do
         |> validate_number(:scale, equal_to: 0, message: "must be 0 when bit_mask is set")
         |> validate_number(:bit_mask, greater_than: 0, message: "must be greater than 0")
     end
+  end
+
+  defp normalize_unit(changeset) do
+    case get_change(changeset, :unit) do
+      nil ->
+        changeset
+
+      value when is_binary(value) ->
+        trimmed = String.trim(value)
+
+        if trimmed == "" do
+          put_change(changeset, :unit, nil)
+        else
+          put_change(changeset, :unit, trimmed)
+        end
+
+      _value ->
+        changeset
+    end
+  end
+
+  defp validate_measurement_unit(changeset) do
+    unit = get_field(changeset, :unit)
+
+    if is_nil(unit) do
+      changeset
+    else
+      changeset
+      |> validate_length(:unit, max: 16)
+      |> validate_change(:unit, fn :unit, _value ->
+        if unit_allowed?(changeset) do
+          []
+        else
+          [unit: "can only be set for numeric raw fields"]
+        end
+      end)
+    end
+  end
+
+  defp unit_allowed?(changeset) do
+    get_field(changeset, :data_type) in @numeric_data_types and
+      get_field(changeset, :value_semantics, :raw) == :raw and
+      is_nil(get_field(changeset, :bit_mask))
   end
 
   defp validate_enum_semantics(changeset) do

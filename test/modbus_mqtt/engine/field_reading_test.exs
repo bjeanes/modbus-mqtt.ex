@@ -128,4 +128,23 @@ defmodule ModbusMqtt.Engine.FieldReadingTest do
     assert reading_false.value == false
     assert reading_false.formatted == "false"
   end
+
+  test "adds configured unit to formatted numeric values" do
+    field = %{
+      type: :input_register,
+      data_type: :uint16,
+      scale: -1,
+      swap_words: false,
+      swap_bytes: false,
+      value_semantics: :raw,
+      enum_map: %{},
+      unit: "%"
+    }
+
+    reading = FieldReading.from_modbus([456], field)
+
+    assert reading.decoded == Decimal.new("45.6")
+    assert reading.value == Decimal.new("45.6")
+    assert reading.formatted == "45.6 %"
+  end
 end

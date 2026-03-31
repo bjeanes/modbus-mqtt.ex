@@ -65,6 +65,50 @@ defmodule ModbusMqtt.Devices.FieldTest do
     assert "must contain at least one entry" in errors_on(changeset).enum_map
   end
 
+  describe "measurement units" do
+    test "exposes default unit presets" do
+      presets = Field.unit_presets()
+
+      assert "°C" in presets
+      assert "°F" in presets
+      assert "%" in presets
+    end
+
+    test "accepts unit for numeric raw fields" do
+      attrs = bitmap_attrs(%{name: "temperature", data_type: :int16, unit: " °C "})
+
+      changeset = Field.changeset(%Field{}, attrs)
+
+      assert changeset.valid?
+      assert Ecto.Changeset.get_change(changeset, :unit) == "°C"
+    end
+
+    test "rejects unit when value semantics are enum" do
+      attrs = valid_attrs(%{"1" => "normal"}) |> Map.put(:unit, "%")
+
+      changeset = Field.changeset(%Field{}, attrs)
+
+      refute changeset.valid?
+      assert "can only be set for numeric raw fields" in errors_on(changeset).unit
+    end
+
+    test "rejects unit for string fields" do
+      attrs =
+        bitmap_attrs(%{
+          data_type: :string,
+          length: 2,
+          name: "label",
+          value_semantics: :raw,
+          unit: "°C"
+        })
+
+      changeset = Field.changeset(%Field{}, attrs)
+
+      refute changeset.valid?
+      assert "can only be set for numeric raw fields" in errors_on(changeset).unit
+    end
+  end
+
   describe "bitmap fields" do
     test "accepts valid bitmap field" do
       changeset = Field.changeset(%Field{}, bitmap_attrs(%{bit_mask: 0x0001}))
