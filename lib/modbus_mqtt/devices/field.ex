@@ -53,8 +53,7 @@ defmodule ModbusMqtt.Devices.Field do
       :enum_map,
       :unit,
       :bit_mask,
-      :length,
-      :device_id
+      :length
     ])
     |> validate_required([
       :name,
@@ -68,8 +67,7 @@ defmodule ModbusMqtt.Devices.Field do
       :swap_words,
       :swap_bytes,
       :value_semantics,
-      :enum_map,
-      :device_id
+      :enum_map
     ])
     |> normalize_unit()
     |> validate_enum_semantics()

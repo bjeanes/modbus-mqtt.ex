@@ -156,8 +156,7 @@ defmodule ModbusMqtt.Devices.FieldTest do
       swap_words: false,
       swap_bytes: false,
       value_semantics: :raw,
-      enum_map: %{},
-      device_id: 1
+      enum_map: %{}
     }
     |> Map.merge(overrides)
   end
@@ -175,8 +174,7 @@ defmodule ModbusMqtt.Devices.FieldTest do
       swap_words: false,
       swap_bytes: false,
       value_semantics: :enum,
-      enum_map: enum_map,
-      device_id: 1
+      enum_map: enum_map
     }
   end
 end

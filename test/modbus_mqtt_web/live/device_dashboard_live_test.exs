@@ -155,7 +155,8 @@ defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
 
   defp field_fixture!(device, name, attrs \\ %{}) do
     %Field{}
-    |> Field.changeset(Map.merge(%{name: name, address: 10, device_id: device.id}, attrs))
+    |> Field.changeset(Map.merge(%{name: name, address: 10}, attrs))
+    |> Ecto.Changeset.put_change(:device_id, device.id)
     |> Repo.insert!()
   end
 

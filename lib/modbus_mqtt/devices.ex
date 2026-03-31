@@ -65,7 +65,8 @@ defmodule ModbusMqtt.Devices do
   @doc "Creates a new field for a device"
   def create_field(device_id, attrs \\ %{}) do
     %Field{}
-    |> Field.changeset(Map.put(attrs, "device_id", device_id))
+    |> Field.changeset(attrs)
+    |> Ecto.Changeset.put_change(:device_id, device_id)
     |> Repo.insert()
     |> maybe_reconcile_engine()
   end
