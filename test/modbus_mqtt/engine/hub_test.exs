@@ -26,15 +26,20 @@ defmodule ModbusMqtt.Engine.HubTest do
     device = %{id: 7, name: "Hub Device", base_topic: nil}
     register = %{name: "power"}
 
-    Hub.put_value(server, device, register, 10)
+    reading = %{bytes: [0, 10], value: 10, formatted: "10"}
+    Hub.put_value(server, device, register, reading)
 
     assert_receive {:broadcast, 7, "power", 10}
-    assert_receive {:published, "modbus_mqtt/7/power", 10, []}
+    assert_receive {:published, "modbus_mqtt/7/power", "10", []}
+    assert_receive {:published, "modbus_mqtt/7/power/detail", detail_payload, []}
+    assert Jason.decode!(detail_payload) == %{"bytes" => [0, 10], "value" => 10}
     assert Hub.get_device_state(table, 7) == %{"power" => 10}
 
-    Hub.put_value(server, device, register, 10)
+    same_bytes_different_derived = %{bytes: [0, 10], value: 999, formatted: "999"}
+    Hub.put_value(server, device, register, same_bytes_different_derived)
 
-    refute_receive {:broadcast, 7, "power", 10}
-    refute_receive {:published, "modbus_mqtt/7/power", 10, []}
+    refute_receive {:broadcast, 7, "power", 999}
+    refute_receive {:published, "modbus_mqtt/7/power", "999", []}
+    refute_receive {:published, "modbus_mqtt/7/power/detail", _, []}
   end
 end

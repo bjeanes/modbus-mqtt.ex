@@ -20,6 +20,10 @@ defmodule ModbusMqtt.Mqtt.Topics do
     join([base_topic(), Topic.key(device), register.name])
   end
 
+  def device_value_detail_topic(device, register) do
+    join([base_topic(), Topic.key(device), register.name, "detail"])
+  end
+
   def device_status_topic(device_meta) do
     join([base_topic(), "devices", Topic.key(device_meta), "status"])
   end

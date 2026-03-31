@@ -2,6 +2,7 @@ defmodule ModbusMqtt.Engine.Poller do
   use GenServer
   require Logger
 
+  alias ModbusMqtt.Engine.RegisterReading
   alias ModbusMqtt.Engine.RegisterValue
   alias ModbusMqtt.Mqtt.Status
 
@@ -65,12 +66,12 @@ defmodule ModbusMqtt.Engine.Poller do
          destination: dest,
          status: status
        }) do
-    scaled = RegisterValue.decode(values, reg)
+    reading = RegisterReading.from_modbus(values, reg)
 
     status.clear_device_error(device)
 
     # Send values directly to destination (usually Hub)
-    dest.put_value(device, reg, scaled)
+    dest.put_value(device, reg, reading)
   end
 
   defp handle_response({:error, reason}, %{device: device, register: reg, status: status}) do

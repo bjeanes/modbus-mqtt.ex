@@ -12,8 +12,8 @@ defmodule ModbusMqtt.Engine.PollerTest do
   end
 
   defmodule FakeDestination do
-    def put_value(device, register, value) do
-      send(device.test_pid, {:put_value, device.id, register.name, value})
+    def put_value(device, register, reading) do
+      send(device.test_pid, {:put_value, device.id, register.name, reading})
     end
   end
 
@@ -83,7 +83,10 @@ defmodule ModbusMqtt.Engine.PollerTest do
 
     assert_receive {:read_holding_registers, 10, 2, 40002, 1}
     assert_receive {:status, :clear_error, 10}
-    assert_receive {:put_value, 10, "power", 120.0}
+    assert_receive {:put_value, 10, "power", reading}
+    assert reading.bytes == [0, 12]
+    assert reading.value == 120.0
+    assert reading.formatted == "120.0"
   end
 
   test "reports read errors without crashing" do

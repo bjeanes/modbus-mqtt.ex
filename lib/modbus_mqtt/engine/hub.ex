@@ -33,15 +33,15 @@ defmodule ModbusMqtt.Engine.Hub do
 
   @doc """
   Pushes a new value to the Hub.
-  If the value is different from the last known value, the Hub caches it,
+  If the raw bytes are different from the last known value, the Hub caches it,
   broadcasts internally via Phoenix.PubSub, and publishes to MQTT.
   """
-  def put_value(%{id: _device_id} = device, %{name: _register_name} = register, value) do
-    put_value(__MODULE__, device, register, value)
+  def put_value(%{id: _device_id} = device, %{name: _register_name} = register, reading) do
+    put_value(__MODULE__, device, register, reading)
   end
 
-  def put_value(server, %{id: _device_id} = device, %{name: _register_name} = register, value) do
-    GenServer.cast(server, {:put_value, device, register, value})
+  def put_value(server, %{id: _device_id} = device, %{name: _register_name} = register, reading) do
+    GenServer.cast(server, {:put_value, device, register, reading})
   end
 
   @doc "Retrieves the latest known state map of %{register_name => value} for an entire device"
@@ -54,18 +54,22 @@ defmodule ModbusMqtt.Engine.Hub do
     match_spec = [{{{device_id, :"$1"}, :"$2", :_}, [], [{{:"$1", :"$2"}}]}]
 
     :ets.select(table, match_spec)
+    |> Enum.map(fn {register_name, reading} ->
+      {register_name, reading.value}
+    end)
     |> Map.new()
   end
 
   @impl true
-  def handle_cast({:put_value, device, register, value}, state) do
+  def handle_cast({:put_value, device, register, reading}, state) do
     key = {device.id, register.name}
+
+    normalized_reading = normalize_reading(reading)
 
     changed? =
       case :ets.lookup(state.table, key) do
-        [{^key, existing_value, _updated_at}] ->
-          # Only proceed if mathematically different (not checking timestamp logic yet)
-          existing_value != value
+        [{^key, existing_reading, _updated_at}] ->
+          existing_reading.bytes != normalized_reading.bytes
 
         [] ->
           true
@@ -73,19 +77,36 @@ defmodule ModbusMqtt.Engine.Hub do
 
     if changed? do
       # 1. Update ETS
-      :ets.insert(state.table, {key, value, state.now_fun.()})
+      :ets.insert(state.table, {key, normalized_reading, state.now_fun.()})
 
       # 2. Phoenix PubSub Broadcast for Real-Time Web UI
-      state.broadcast_fun.(ModbusMqtt.PubSub, device.id, register.name, value)
+      state.broadcast_fun.(ModbusMqtt.PubSub, device.id, register.name, normalized_reading.value)
 
       # 3. Publish out to Tortoise311
       topic = Topics.device_value_topic(device, register)
-      state.publish_fun.(topic, value, [])
+      state.publish_fun.(topic, normalized_reading.formatted, [])
 
-      Logger.debug("Hub Delta: #{device.name}:#{register.name} changed to #{value}")
+      detail_topic = Topics.device_value_detail_topic(device, register)
+
+      detail_payload =
+        Jason.encode!(%{"bytes" => normalized_reading.bytes, "value" => normalized_reading.value})
+
+      state.publish_fun.(detail_topic, detail_payload, [])
+
+      Logger.debug(
+        "Hub Delta: #{device.name}:#{register.name} changed to #{normalized_reading.formatted}"
+      )
     end
 
     {:noreply, state}
+  end
+
+  defp normalize_reading(%{bytes: bytes, value: value, formatted: formatted}) do
+    %{bytes: bytes, value: value, formatted: formatted}
+  end
+
+  defp normalize_reading(value) do
+    %{bytes: [], value: value, formatted: to_string(value)}
   end
 
   def publish_mqtt(topic, payload, opts) do
