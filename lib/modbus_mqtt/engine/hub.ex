@@ -7,7 +7,6 @@ defmodule ModbusMqtt.Engine.Hub do
   use GenServer
   require Logger
 
-  alias ModbusMqtt.Engine.FieldSemantics
   alias ModbusMqtt.Mqtt.Topics
 
   @table :modbus_mqtt_hub_cache
@@ -111,7 +110,7 @@ defmodule ModbusMqtt.Engine.Hub do
 
       # 3. Publish out to Tortoise311
       topic = Topics.device_value_topic(device, field)
-      state.publish_fun.(topic, FieldSemantics.format(reading.value), [])
+      state.publish_fun.(topic, reading.formatted, [])
 
       detail_topic = Topics.device_value_detail_topic(device, field)
 
@@ -119,6 +118,7 @@ defmodule ModbusMqtt.Engine.Hub do
         Jason.encode!(%{
           "bytes" => reading.bytes,
           "decoded" => json_value(reading.decoded),
+          "formatted" => reading.formatted,
           "value" => json_value(reading.value)
         })
 

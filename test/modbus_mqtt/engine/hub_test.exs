@@ -33,7 +33,14 @@ defmodule ModbusMqtt.Engine.HubTest do
     assert_receive {:broadcast, 7, "power", 10}
     assert_receive {:published, "modbus_mqtt/7/power", "10", []}
     assert_receive {:published, "modbus_mqtt/7/power/detail", detail_payload, []}
-    assert Jason.decode!(detail_payload) == %{"bytes" => [0, 10], "decoded" => 10, "value" => 10}
+
+    assert Jason.decode!(detail_payload) == %{
+             "bytes" => [0, 10],
+             "decoded" => 10,
+             "formatted" => "10",
+             "value" => 10
+           }
+
     assert Hub.get_device_state(table, 7) == %{"power" => 10}
 
     assert Hub.get_device_readings(table, 7) == %{
@@ -62,6 +69,7 @@ defmodule ModbusMqtt.Engine.HubTest do
     assert Jason.decode!(detail_payload_2) == %{
              "bytes" => [0, 10],
              "decoded" => 10,
+             "formatted" => "running",
              "value" => "running"
            }
 
@@ -118,6 +126,7 @@ defmodule ModbusMqtt.Engine.HubTest do
     assert Jason.decode!(detail_payload) == %{
              "bytes" => [48, 57],
              "decoded" => 123.45,
+             "formatted" => "123.45",
              "value" => 123.45
            }
   end
@@ -155,6 +164,7 @@ defmodule ModbusMqtt.Engine.HubTest do
     assert Jason.decode!(detail_payload) == %{
              "bytes" => [0, 170],
              "decoded" => 170,
+             "formatted" => "maintenance",
              "value" => "maintenance"
            }
   end
