@@ -125,6 +125,19 @@ registers = [
   %{address: 5003, data_type: :uint16, name: "daily_output_energy", scale: -1},
   %{address: 5004, data_type: :uint32, swap_words: true, name: "total_output_energy", scale: -1},
   %{address: 13029, data_type: :uint16, name: "daily_self_consumption_rate", scale: -1},
+  %{
+    address: 13051,
+    data_type: :uint16,
+    type: :holding_register,
+    name: "battery_mode",
+    poll_interval_ms: 1000,
+    value_semantics: :enum,
+    enum_map: %{
+      "0xAA" => "charge",
+      "0xBB" => "discharge",
+      "0xCC" => "stop"
+    }
+  },
   %{address: 13036, data_type: :uint16, name: "daily_import_energy", scale: -1},
   %{address: 13037, data_type: :uint32, swap_words: true, name: "total_import_energy", scale: -1},
   %{address: 13040, data_type: :uint16, name: "daily_charge_energy", scale: -1},
@@ -143,6 +156,8 @@ for reg <- registers do
     writable: Map.get(reg, :type) == :holding_register,
     scale: Map.get(reg, :scale, 0),
     swap_words: Map.get(reg, :swap_words, false),
-    swap_bytes: Map.get(reg, :swap_bytes, false)
+    swap_bytes: Map.get(reg, :swap_bytes, false),
+    value_semantics: Map.get(reg, :value_semantics, :raw),
+    enum_map: Map.get(reg, :enum_map, %{})
   })
 end

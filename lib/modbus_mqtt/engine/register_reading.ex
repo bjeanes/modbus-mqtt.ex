@@ -5,29 +5,30 @@ defmodule ModbusMqtt.Engine.RegisterReading do
 
   import Bitwise
 
+  alias ModbusMqtt.Engine.RegisterSemantics
   alias ModbusMqtt.Engine.RegisterValue
 
-  @enforce_keys [:bytes, :value, :formatted]
-  defstruct [:bytes, :value, :formatted]
+  @enforce_keys [:bytes, :decoded, :value, :formatted]
+  defstruct [:bytes, :decoded, :value, :formatted]
 
   @type t :: %__MODULE__{
           bytes: [integer()],
+          decoded: term(),
           value: term(),
           formatted: String.t()
         }
 
   def from_modbus(values, register) when is_list(values) do
-    value = RegisterValue.decode(values, register)
+    decoded = RegisterValue.decode(values, register)
+    value = RegisterSemantics.to_value(decoded, register)
 
     %__MODULE__{
       bytes: bytes_from_values(values, register.type),
+      decoded: decoded,
       value: value,
-      formatted: format_value(value)
+      formatted: RegisterSemantics.format(value)
     }
   end
-
-  defp format_value(%Decimal{} = value), do: Decimal.to_string(value, :normal)
-  defp format_value(value), do: to_string(value)
 
   defp bytes_from_values(values, type) when type in [:holding_register, :input_register] do
     Enum.flat_map(values, fn word ->

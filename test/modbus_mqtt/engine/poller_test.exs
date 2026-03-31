@@ -86,6 +86,8 @@ defmodule ModbusMqtt.Engine.PollerTest do
     assert_receive {:status, :clear_error, 10}
     assert_receive {:put_value, 10, "power", reading}
     assert reading.bytes == [0, 12]
+    assert match?(%Decimal{}, reading.decoded)
+    assert D.equal?(reading.decoded, D.new("120"))
     assert match?(%Decimal{}, reading.value)
     assert D.equal?(reading.value, D.new("120"))
     assert reading.formatted == "120"

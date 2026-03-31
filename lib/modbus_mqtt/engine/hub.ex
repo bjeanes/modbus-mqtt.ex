@@ -7,6 +7,7 @@ defmodule ModbusMqtt.Engine.Hub do
   use GenServer
   require Logger
 
+  alias ModbusMqtt.Engine.RegisterSemantics
   alias ModbusMqtt.Mqtt.Topics
 
   @table :modbus_mqtt_hub_cache
@@ -84,13 +85,14 @@ defmodule ModbusMqtt.Engine.Hub do
 
       # 3. Publish out to Tortoise311
       topic = Topics.device_value_topic(device, register)
-      state.publish_fun.(topic, normalized_reading.formatted, [])
+      state.publish_fun.(topic, RegisterSemantics.format(normalized_reading.value), [])
 
       detail_topic = Topics.device_value_detail_topic(device, register)
 
       detail_payload =
         Jason.encode!(%{
           "bytes" => normalized_reading.bytes,
+          "decoded" => json_value(normalized_reading.decoded),
           "value" => json_value(normalized_reading.value)
         })
 
@@ -104,12 +106,16 @@ defmodule ModbusMqtt.Engine.Hub do
     {:noreply, state}
   end
 
+  defp normalize_reading(%{bytes: bytes, decoded: decoded, value: value, formatted: formatted}) do
+    %{bytes: bytes, decoded: decoded, value: value, formatted: formatted}
+  end
+
   defp normalize_reading(%{bytes: bytes, value: value, formatted: formatted}) do
-    %{bytes: bytes, value: value, formatted: formatted}
+    %{bytes: bytes, decoded: value, value: value, formatted: formatted}
   end
 
   defp normalize_reading(value) do
-    %{bytes: [], value: value, formatted: to_string(value)}
+    %{bytes: [], decoded: value, value: value, formatted: RegisterSemantics.format(value)}
   end
 
   defp json_value(%Decimal{} = value), do: Decimal.to_float(value)

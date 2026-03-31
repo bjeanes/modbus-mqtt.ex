@@ -2,6 +2,8 @@ defmodule ModbusMqtt.Devices.Register do
   use Ecto.Schema
   import Ecto.Changeset
 
+  @enum_register_types [:holding_register, :input_register]
+
   schema "registers" do
     field :name, :string
 
@@ -20,6 +22,8 @@ defmodule ModbusMqtt.Devices.Register do
     field :scale, :integer, default: 0
     field :swap_words, :boolean, default: false
     field :swap_bytes, :boolean, default: false
+    field :value_semantics, Ecto.Enum, values: [:raw, :enum], default: :raw
+    field :enum_map, :map, default: %{}
 
     belongs_to :device, ModbusMqtt.Devices.Device
 
@@ -40,6 +44,8 @@ defmodule ModbusMqtt.Devices.Register do
       :scale,
       :swap_words,
       :swap_bytes,
+      :value_semantics,
+      :enum_map,
       :device_id
     ])
     |> validate_required([
@@ -53,7 +59,127 @@ defmodule ModbusMqtt.Devices.Register do
       :scale,
       :swap_words,
       :swap_bytes,
+      :value_semantics,
+      :enum_map,
       :device_id
     ])
+    |> validate_enum_semantics()
   end
+
+  @doc """
+  Parses enum map keys from decimal (`100`), hex (`0xAA`), or binary (`0b1010`).
+  """
+  @spec parse_enum_key(integer() | String.t()) :: {:ok, non_neg_integer()} | {:error, atom()}
+  def parse_enum_key(value) when is_integer(value) do
+    validate_enum_code(value)
+  end
+
+  def parse_enum_key(value) when is_binary(value) do
+    trimmed = String.trim(value)
+
+    parsed =
+      cond do
+        String.starts_with?(trimmed, "0x") or String.starts_with?(trimmed, "0X") ->
+          parse_prefixed(trimmed, 2, 16)
+
+        String.starts_with?(trimmed, "0b") or String.starts_with?(trimmed, "0B") ->
+          parse_prefixed(trimmed, 2, 2)
+
+        true ->
+          parse_full_integer(trimmed, 10)
+      end
+
+    case parsed do
+      {:ok, code} -> validate_enum_code(code)
+      {:error, _reason} -> {:error, :invalid_enum_key}
+    end
+  end
+
+  def parse_enum_key(_value), do: {:error, :invalid_enum_key}
+
+  defp validate_enum_semantics(changeset) do
+    case get_field(changeset, :value_semantics, :raw) do
+      :enum ->
+        changeset
+        |> validate_enum_map_field()
+        |> validate_inclusion(:data_type, [:uint16],
+          message: "must be uint16 when value_semantics is enum"
+        )
+        |> validate_inclusion(:type, @enum_register_types,
+          message: "must be input_register or holding_register when value_semantics is enum"
+        )
+        |> validate_number(:scale, equal_to: 0)
+
+      :raw ->
+        changeset
+    end
+  end
+
+  defp validate_enum_map_field(changeset) do
+    :enum_map
+    |> validate_enum_map(get_field(changeset, :enum_map))
+    |> Enum.reduce(changeset, fn {field, message}, acc -> add_error(acc, field, message) end)
+  end
+
+  defp validate_enum_map(field, enum_map) when is_map(enum_map) do
+    errors =
+      if map_size(enum_map) == 0 do
+        [{field, "must contain at least one entry"}]
+      else
+        []
+      end
+
+    {errors, _seen_codes} =
+      Enum.reduce(enum_map, {errors, %{}}, fn {key, label}, {acc_errors, seen_codes} ->
+        acc_errors =
+          if valid_enum_label?(label) do
+            acc_errors
+          else
+            [{field, "contains an invalid label for key #{inspect(key)}"} | acc_errors]
+          end
+
+        case parse_enum_key(key) do
+          {:ok, code} ->
+            case Map.fetch(seen_codes, code) do
+              :error ->
+                {acc_errors, Map.put(seen_codes, code, key)}
+
+              {:ok, existing_key} ->
+                {[
+                   {field,
+                    "contains duplicate numeric key mappings for #{inspect(existing_key)} and #{inspect(key)}"}
+                   | acc_errors
+                 ], seen_codes}
+            end
+
+          {:error, _reason} ->
+            {[{field, "contains an invalid key #{inspect(key)}"} | acc_errors], seen_codes}
+        end
+      end)
+
+    Enum.reverse(errors)
+  end
+
+  defp validate_enum_map(field, _enum_map), do: [{field, "must be a map"}]
+
+  defp valid_enum_label?(label) when is_binary(label), do: String.trim(label) != ""
+  defp valid_enum_label?(_label), do: false
+
+  defp parse_prefixed(value, offset, base) do
+    value
+    |> String.slice(offset..-1//1)
+    |> parse_full_integer(base)
+  end
+
+  defp parse_full_integer(value, _base) when value in [nil, ""], do: {:error, :invalid_enum_key}
+
+  defp parse_full_integer(value, base) do
+    case Integer.parse(value, base) do
+      {parsed, ""} -> {:ok, parsed}
+      _ -> {:error, :invalid_enum_key}
+    end
+  end
+
+  defp validate_enum_code(code) when code >= 0 and code <= 0xFFFF, do: {:ok, code}
+  defp validate_enum_code(_code), do: {:error, :invalid_enum_key}
 end
