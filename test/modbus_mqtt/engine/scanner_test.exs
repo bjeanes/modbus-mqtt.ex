@@ -1,20 +1,13 @@
-defmodule ModbusMqtt.Engine.PollerTest do
+defmodule ModbusMqtt.Engine.ScannerTest do
   use ExUnit.Case, async: false
 
-  alias Decimal, as: D
-  alias ModbusMqtt.Engine.Poller
+  alias ModbusMqtt.Engine.Scanner
 
   defmodule FakeStatus do
     def clear_device_error(device), do: send(device.test_pid, {:status, :clear_error, device.id})
 
     def device_error(device, message) do
       send(device.test_pid, {:status, :device_error, device.id, message})
-    end
-  end
-
-  defmodule FakeDestination do
-    def put_value(device, register, reading) do
-      send(device.test_pid, {:put_value, device.id, register.name, reading})
     end
   end
 
@@ -42,38 +35,32 @@ defmodule ModbusMqtt.Engine.PollerTest do
   setup do
     :persistent_term.put({FakeConnection, :owner}, self())
 
+    # Create a unique ETS table for RegisterCache per test
+    table = :"register_cache_#{System.unique_integer([:positive])}"
+    :ets.new(table, [:named_table, :set, :public, read_concurrency: true])
+
     on_exit(fn ->
       :persistent_term.erase({FakeConnection, :owner})
       :persistent_term.erase({FakeConnection, :reply})
     end)
 
-    :ok
+    %{cache_table: table}
   end
 
-  test "polls, decodes, scales, and forwards values" do
-    :persistent_term.put({FakeConnection, :reply}, {:ok, [12]})
+  test "scans holding registers and writes to RegisterCache" do
+    :persistent_term.put({FakeConnection, :reply}, {:ok, [100, 200, 300]})
 
     device = %{id: 10, unit: 2, name: "Meter", test_pid: self()}
 
-    register = %{
-      name: "power",
-      address: 40001,
-      address_offset: 1,
-      data_type: :uint16,
-      poll_interval_ms: 30_000,
-      scale: 1,
-      swap_words: false,
-      swap_bytes: false,
-      type: :holding_register
-    }
-
     pid =
       start_supervised!(
-        {Poller,
+        {Scanner,
          %{
            device: device,
-           register: register,
-           destination: FakeDestination,
+           register_type: :holding_register,
+           start_address: 40001,
+           count: 3,
+           poll_interval_ms: 30_000,
            connection: FakeConnection,
            status: FakeStatus,
            initial_poll_ms: :manual
@@ -82,41 +69,50 @@ defmodule ModbusMqtt.Engine.PollerTest do
 
     send(pid, :poll)
 
-    assert_receive {:read_holding_registers, 10, 2, 40002, 1}
+    assert_receive {:read_holding_registers, 10, 2, 40001, 3}
     assert_receive {:status, :clear_error, 10}
-    assert_receive {:put_value, 10, "power", reading}
-    assert reading.bytes == [0, 12]
-    assert match?(%Decimal{}, reading.decoded)
-    assert D.equal?(reading.decoded, D.new("120"))
-    assert match?(%Decimal{}, reading.value)
-    assert D.equal?(reading.value, D.new("120"))
-    assert reading.formatted == "120"
+  end
+
+  test "scans input registers" do
+    :persistent_term.put({FakeConnection, :reply}, {:ok, [42]})
+
+    device = %{id: 11, unit: 1, name: "Sensor", test_pid: self()}
+
+    pid =
+      start_supervised!(
+        {Scanner,
+         %{
+           device: device,
+           register_type: :input_register,
+           start_address: 5000,
+           count: 1,
+           poll_interval_ms: 30_000,
+           connection: FakeConnection,
+           status: FakeStatus,
+           initial_poll_ms: :manual
+         }}
+      )
+
+    send(pid, :poll)
+
+    assert_receive {:read_input_registers, 11, 1, 5000, 1}
+    assert_receive {:status, :clear_error, 11}
   end
 
   test "reports read errors without crashing" do
     :persistent_term.put({FakeConnection, :reply}, {:error, {:exit, :timeout}})
 
-    device = %{id: 11, unit: 1, name: "Meter", test_pid: self()}
-
-    register = %{
-      name: "power",
-      address: 123,
-      address_offset: 0,
-      data_type: :uint16,
-      poll_interval_ms: 30_000,
-      scale: 0,
-      swap_words: false,
-      swap_bytes: false,
-      type: :holding_register
-    }
+    device = %{id: 12, unit: 1, name: "Meter", test_pid: self()}
 
     pid =
       start_supervised!(
-        {Poller,
+        {Scanner,
          %{
            device: device,
-           register: register,
-           destination: FakeDestination,
+           register_type: :holding_register,
+           start_address: 123,
+           count: 1,
+           poll_interval_ms: 30_000,
            connection: FakeConnection,
            status: FakeStatus,
            initial_poll_ms: :manual
@@ -125,36 +121,26 @@ defmodule ModbusMqtt.Engine.PollerTest do
 
     send(pid, :poll)
 
-    assert_receive {:read_holding_registers, 11, 1, 123, 1}
-    assert_receive {:status, :device_error, 11, message}
-    assert message =~ "Read failed"
+    assert_receive {:read_holding_registers, 12, 1, 123, 1}
+    assert_receive {:status, :device_error, 12, message}
+    assert message =~ "Scan failed"
     assert Process.alive?(pid)
   end
 
   test "does not publish device_error for reconnecting errors" do
     :persistent_term.put({FakeConnection, :reply}, {:error, :device_not_running})
 
-    device = %{id: 12, unit: 1, name: "Meter", test_pid: self()}
-
-    register = %{
-      name: "power",
-      address: 456,
-      address_offset: 0,
-      data_type: :uint16,
-      poll_interval_ms: 30_000,
-      scale: 0,
-      swap_words: false,
-      swap_bytes: false,
-      type: :holding_register
-    }
+    device = %{id: 13, unit: 1, name: "Meter", test_pid: self()}
 
     pid =
       start_supervised!(
-        {Poller,
+        {Scanner,
          %{
            device: device,
-           register: register,
-           destination: FakeDestination,
+           register_type: :holding_register,
+           start_address: 456,
+           count: 1,
+           poll_interval_ms: 30_000,
            connection: FakeConnection,
            status: FakeStatus,
            initial_poll_ms: :manual
@@ -163,8 +149,8 @@ defmodule ModbusMqtt.Engine.PollerTest do
 
     send(pid, :poll)
 
-    assert_receive {:read_holding_registers, 12, 1, 456, 1}
-    refute_receive {:status, :device_error, 12, _message}, 100
+    assert_receive {:read_holding_registers, 13, 1, 456, 1}
+    refute_receive {:status, :device_error, 13, _message}, 100
     assert Process.alive?(pid)
   end
 end

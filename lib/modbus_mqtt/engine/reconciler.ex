@@ -44,7 +44,7 @@ defmodule ModbusMqtt.Engine.Reconciler do
         Keyword.get(
           opts,
           :list_active_devices_fun,
-          &ModbusMqtt.Devices.list_active_devices_with_registers/0
+          &ModbusMqtt.Devices.list_active_devices_with_fields/0
         ),
       start_device_fun:
         Keyword.get(opts, :start_device_fun, &ModbusMqtt.Engine.Supervisor.start_device/1),
@@ -192,11 +192,11 @@ defmodule ModbusMqtt.Engine.Reconciler do
   end
 
   defp device_signature(device) do
-    registers_signature =
-      device.registers
+    fields_signature =
+      device.fields
       |> List.wrap()
       |> Enum.sort_by(& &1.id)
-      |> Enum.map(&register_signature/1)
+      |> Enum.map(&field_signature/1)
 
     %{
       id: device.id,
@@ -205,25 +205,25 @@ defmodule ModbusMqtt.Engine.Reconciler do
       base_topic: device.base_topic,
       unit: device.unit,
       transport_config: device.transport_config || %{},
-      registers: registers_signature
+      fields: fields_signature
     }
   end
 
-  defp register_signature(register) do
+  defp field_signature(field) do
     %{
-      id: register.id,
-      name: register.name,
-      type: register.type,
-      data_type: register.data_type,
-      address: register.address,
-      address_offset: register.address_offset,
-      poll_interval_ms: register.poll_interval_ms,
-      writable: register.writable,
-      scale: register.scale,
-      swap_words: register.swap_words,
-      swap_bytes: register.swap_bytes,
-      value_semantics: register.value_semantics,
-      enum_map: register.enum_map || %{}
+      id: field.id,
+      name: field.name,
+      type: field.type,
+      data_type: field.data_type,
+      address: field.address,
+      address_offset: field.address_offset,
+      poll_interval_ms: field.poll_interval_ms,
+      writable: field.writable,
+      scale: field.scale,
+      swap_words: field.swap_words,
+      swap_bytes: field.swap_bytes,
+      value_semantics: field.value_semantics,
+      enum_map: field.enum_map || %{}
     }
   end
 end

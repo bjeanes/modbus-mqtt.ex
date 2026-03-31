@@ -1,36 +1,36 @@
 defmodule ModbusMqtt.Devices do
   @moduledoc """
-  Context module for device and register management.
-  Centralizes queries, changesets, and validation for devices and registers.
+  Context module for device and field management.
+  Centralizes queries, changesets, and validation for devices and fields.
   """
   import Ecto.Query
   require Logger
 
   alias ModbusMqtt.Repo
   alias ModbusMqtt.Devices.Device
-  alias ModbusMqtt.Devices.Register
+  alias ModbusMqtt.Devices.Field
 
-  @doc "Lists all active devices with their registers preloaded"
-  def list_active_devices_with_registers do
+  @doc "Lists all active devices with their fields preloaded"
+  def list_active_devices_with_fields do
     query =
       from d in Device,
         where: d.active == true,
-        preload: [:registers]
+        preload: [:fields]
 
     Repo.all(query)
   end
 
-  @doc "Gets a single device by ID with registers preloaded"
+  @doc "Gets a single device by ID with fields preloaded"
   def get_device!(id) do
     Repo.get!(Device, id)
-    |> Repo.preload(:registers)
+    |> Repo.preload(:fields)
   end
 
   @doc "Gets a device by ID without raising if not found"
   def get_device(id) do
     case Repo.get(Device, id) do
       nil -> nil
-      device -> Repo.preload(device, :registers)
+      device -> Repo.preload(device, :fields)
     end
   end
 
@@ -62,51 +62,51 @@ defmodule ModbusMqtt.Devices do
     Device.changeset(device, attrs)
   end
 
-  @doc "Creates a new register for a device"
-  def create_register(device_id, attrs \\ %{}) do
-    %Register{}
-    |> Register.changeset(Map.put(attrs, "device_id", device_id))
+  @doc "Creates a new field for a device"
+  def create_field(device_id, attrs \\ %{}) do
+    %Field{}
+    |> Field.changeset(Map.put(attrs, "device_id", device_id))
     |> Repo.insert()
     |> maybe_reconcile_engine()
   end
 
-  @doc "Updates a register"
-  def update_register(%Register{} = register, attrs) do
-    register
-    |> Register.changeset(attrs)
+  @doc "Updates a field"
+  def update_field(%Field{} = field, attrs) do
+    field
+    |> Field.changeset(attrs)
     |> Repo.update()
     |> maybe_reconcile_engine()
   end
 
-  @doc "Deletes a register"
-  def delete_register(%Register{} = register) do
-    register
+  @doc "Deletes a field"
+  def delete_field(%Field{} = field) do
+    field
     |> Repo.delete()
     |> maybe_reconcile_engine()
   end
 
-  @doc "Returns a register changeset for use in forms"
-  def change_register(%Register{} = register, attrs \\ %{}) do
-    Register.changeset(register, attrs)
+  @doc "Returns a field changeset for use in forms"
+  def change_field(%Field{} = field, attrs \\ %{}) do
+    Field.changeset(field, attrs)
   end
 
-  @doc "Lists registers for a device"
-  def list_registers_for_device(device_id) do
+  @doc "Lists fields for a device"
+  def list_fields_for_device(device_id) do
     query =
-      from r in Register,
-        where: r.device_id == ^device_id
+      from f in Field,
+        where: f.device_id == ^device_id
 
     Repo.all(query)
   end
 
-  @doc "Gets a single register by ID"
-  def get_register!(id) do
-    Repo.get!(Register, id)
+  @doc "Gets a single field by ID"
+  def get_field!(id) do
+    Repo.get!(Field, id)
   end
 
-  @doc "Gets a register by ID without raising if not found"
-  def get_register(id) do
-    Repo.get(Register, id)
+  @doc "Gets a field by ID without raising if not found"
+  def get_field(id) do
+    Repo.get(Field, id)
   end
 
   defp maybe_reconcile_engine({:ok, _record} = result) do

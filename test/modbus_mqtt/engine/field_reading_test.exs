@@ -1,10 +1,10 @@
-defmodule ModbusMqtt.Engine.RegisterReadingTest do
+defmodule ModbusMqtt.Engine.FieldReadingTest do
   use ExUnit.Case, async: true
 
-  alias ModbusMqtt.Engine.RegisterReading
+  alias ModbusMqtt.Engine.FieldReading
 
   test "builds bytes/decoded/value/formatted for holding registers" do
-    register = %{
+    field = %{
       type: :holding_register,
       data_type: :uint16,
       scale: 0,
@@ -14,7 +14,7 @@ defmodule ModbusMqtt.Engine.RegisterReadingTest do
       enum_map: %{}
     }
 
-    reading = RegisterReading.from_modbus([0x1234], register)
+    reading = FieldReading.from_modbus([0x1234], field)
 
     assert reading.bytes == [0x12, 0x34]
     assert reading.decoded == 0x1234
@@ -23,7 +23,7 @@ defmodule ModbusMqtt.Engine.RegisterReadingTest do
   end
 
   test "keeps bit reads as-is for coil/discrete input values" do
-    register = %{
+    field = %{
       type: :coil,
       data_type: :bool,
       scale: 0,
@@ -33,7 +33,7 @@ defmodule ModbusMqtt.Engine.RegisterReadingTest do
       enum_map: %{}
     }
 
-    reading = RegisterReading.from_modbus([1], register)
+    reading = FieldReading.from_modbus([1], field)
 
     assert reading.bytes == [1]
     assert reading.decoded == true
@@ -42,7 +42,7 @@ defmodule ModbusMqtt.Engine.RegisterReadingTest do
   end
 
   test "keeps bytes as read while swap_words and swap_bytes affect interpreted float value" do
-    register = %{
+    field = %{
       type: :input_register,
       data_type: :float32,
       scale: 0,
@@ -52,7 +52,7 @@ defmodule ModbusMqtt.Engine.RegisterReadingTest do
       enum_map: %{}
     }
 
-    reading = RegisterReading.from_modbus([0x0000, 0x803F], register)
+    reading = FieldReading.from_modbus([0x0000, 0x803F], field)
 
     assert reading.bytes == [0x00, 0x00, 0x80, 0x3F]
     assert reading.decoded == 1.0
@@ -61,7 +61,7 @@ defmodule ModbusMqtt.Engine.RegisterReadingTest do
   end
 
   test "swap_bytes changes interpreted value but not raw byte capture" do
-    base_register = %{
+    base_field = %{
       type: :holding_register,
       data_type: :uint32,
       scale: 0,
@@ -71,10 +71,10 @@ defmodule ModbusMqtt.Engine.RegisterReadingTest do
       enum_map: %{}
     }
 
-    swapped_register = %{base_register | swap_bytes: true}
+    swapped_field = %{base_field | swap_bytes: true}
 
-    base_reading = RegisterReading.from_modbus([0x1234, 0x5678], base_register)
-    swapped_reading = RegisterReading.from_modbus([0x1234, 0x5678], swapped_register)
+    base_reading = FieldReading.from_modbus([0x1234, 0x5678], base_field)
+    swapped_reading = FieldReading.from_modbus([0x1234, 0x5678], swapped_field)
 
     assert base_reading.bytes == [0x12, 0x34, 0x56, 0x78]
     assert swapped_reading.bytes == [0x12, 0x34, 0x56, 0x78]
@@ -87,7 +87,7 @@ defmodule ModbusMqtt.Engine.RegisterReadingTest do
   end
 
   test "maps uint16 enum values to semantic strings" do
-    register = %{
+    field = %{
       type: :input_register,
       data_type: :uint16,
       scale: 0,
@@ -97,7 +97,7 @@ defmodule ModbusMqtt.Engine.RegisterReadingTest do
       enum_map: %{"1" => "standby", "0xAA" => "maintenance", "0b11" => "running"}
     }
 
-    reading = RegisterReading.from_modbus([0x00AA], register)
+    reading = FieldReading.from_modbus([0x00AA], field)
 
     assert reading.bytes == [0x00, 0xAA]
     assert reading.decoded == 170

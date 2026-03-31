@@ -1,12 +1,12 @@
-defmodule ModbusMqtt.Engine.RegisterReading do
+defmodule ModbusMqtt.Engine.FieldReading do
   @moduledoc """
-  Represents a register reading with raw bytes, interpreted value, and formatted output.
+  Represents a field reading with raw bytes, interpreted value, and formatted output.
   """
 
   import Bitwise
 
-  alias ModbusMqtt.Engine.RegisterSemantics
-  alias ModbusMqtt.Engine.RegisterValue
+  alias ModbusMqtt.Engine.FieldSemantics
+  alias ModbusMqtt.Engine.FieldCodec
 
   @enforce_keys [:bytes, :decoded, :value, :formatted]
   defstruct [:bytes, :decoded, :value, :formatted]
@@ -18,15 +18,15 @@ defmodule ModbusMqtt.Engine.RegisterReading do
           formatted: String.t()
         }
 
-  def from_modbus(values, register) when is_list(values) do
-    decoded = RegisterValue.decode(values, register)
-    value = RegisterSemantics.to_value(decoded, register)
+  def from_modbus(values, field) when is_list(values) do
+    decoded = FieldCodec.decode(values, field)
+    value = FieldSemantics.to_value(decoded, field)
 
     %__MODULE__{
-      bytes: bytes_from_values(values, register.type),
+      bytes: bytes_from_values(values, field.type),
       decoded: decoded,
       value: value,
-      formatted: RegisterSemantics.format(value)
+      formatted: FieldSemantics.format(value)
     }
   end
 

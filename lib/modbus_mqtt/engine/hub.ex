@@ -7,7 +7,7 @@ defmodule ModbusMqtt.Engine.Hub do
   use GenServer
   require Logger
 
-  alias ModbusMqtt.Engine.RegisterSemantics
+  alias ModbusMqtt.Engine.FieldSemantics
   alias ModbusMqtt.Mqtt.Topics
 
   @table :modbus_mqtt_hub_cache
@@ -37,15 +37,15 @@ defmodule ModbusMqtt.Engine.Hub do
   If the raw bytes are different from the last known value, the Hub caches it,
   broadcasts internally via Phoenix.PubSub, and publishes to MQTT.
   """
-  def put_value(%{id: _device_id} = device, %{name: _register_name} = register, reading) do
-    put_value(__MODULE__, device, register, reading)
+  def put_value(%{id: _device_id} = device, %{name: _field_name} = field, reading) do
+    put_value(__MODULE__, device, field, reading)
   end
 
-  def put_value(server, %{id: _device_id} = device, %{name: _register_name} = register, reading) do
-    GenServer.cast(server, {:put_value, device, register, reading})
+  def put_value(server, %{id: _device_id} = device, %{name: _field_name} = field, reading) do
+    GenServer.cast(server, {:put_value, device, field, reading})
   end
 
-  @doc "Retrieves the latest known state map of %{register_name => value} for an entire device"
+  @doc "Retrieves the latest known state map of %{field_name => value} for an entire device"
   def get_device_state(device_id) do
     get_device_state(@table, device_id)
   end
@@ -55,15 +55,15 @@ defmodule ModbusMqtt.Engine.Hub do
     match_spec = [{{{device_id, :"$1"}, :"$2", :_}, [], [{{:"$1", :"$2"}}]}]
 
     :ets.select(table, match_spec)
-    |> Enum.map(fn {register_name, reading} ->
-      {register_name, reading.value}
+    |> Enum.map(fn {field_name, reading} ->
+      {field_name, reading.value}
     end)
     |> Map.new()
   end
 
   @impl true
-  def handle_cast({:put_value, device, register, reading}, state) do
-    key = {device.id, register.name}
+  def handle_cast({:put_value, device, field, reading}, state) do
+    key = {device.id, field.name}
 
     normalized_reading = normalize_reading(reading)
 
@@ -81,13 +81,13 @@ defmodule ModbusMqtt.Engine.Hub do
       :ets.insert(state.table, {key, normalized_reading, state.now_fun.()})
 
       # 2. Phoenix PubSub Broadcast for Real-Time Web UI
-      state.broadcast_fun.(ModbusMqtt.PubSub, device.id, register.name, normalized_reading.value)
+      state.broadcast_fun.(ModbusMqtt.PubSub, device.id, field.name, normalized_reading.value)
 
       # 3. Publish out to Tortoise311
-      topic = Topics.device_value_topic(device, register)
-      state.publish_fun.(topic, RegisterSemantics.format(normalized_reading.value), [])
+      topic = Topics.device_value_topic(device, field)
+      state.publish_fun.(topic, FieldSemantics.format(normalized_reading.value), [])
 
-      detail_topic = Topics.device_value_detail_topic(device, register)
+      detail_topic = Topics.device_value_detail_topic(device, field)
 
       detail_payload =
         Jason.encode!(%{
@@ -99,7 +99,7 @@ defmodule ModbusMqtt.Engine.Hub do
       state.publish_fun.(detail_topic, detail_payload, [])
 
       Logger.debug(
-        "Hub Delta: #{device.name}:#{register.name} changed to #{normalized_reading.formatted}"
+        "Hub Delta: #{device.name}:#{field.name} changed to #{normalized_reading.formatted}"
       )
     end
 
@@ -115,7 +115,7 @@ defmodule ModbusMqtt.Engine.Hub do
   end
 
   defp normalize_reading(value) do
-    %{bytes: [], decoded: value, value: value, formatted: RegisterSemantics.format(value)}
+    %{bytes: [], decoded: value, value: value, formatted: FieldSemantics.format(value)}
   end
 
   defp json_value(%Decimal{} = value), do: Decimal.to_float(value)
@@ -125,11 +125,11 @@ defmodule ModbusMqtt.Engine.Hub do
     ModbusMqtt.Mqtt.Supervisor.publish(topic, payload, opts)
   end
 
-  def broadcast_update(pubsub, device_id, register_name, value) do
+  def broadcast_update(pubsub, device_id, field_name, value) do
     Phoenix.PubSub.broadcast!(
       pubsub,
       "device:#{device_id}",
-      {:register_update, register_name, value}
+      {:field_update, field_name, value}
     )
   end
 end

@@ -40,7 +40,7 @@ defmodule ModbusMqtt.Engine.ReconcilerTest do
           base_topic: "a",
           unit: 1,
           transport_config: %{},
-          registers: []
+          fields: []
         }
       ],
       []
@@ -87,7 +87,7 @@ defmodule ModbusMqtt.Engine.ReconcilerTest do
     Process.exit(running_pid, :kill)
   end
 
-  test "restarts engines when register config changes" do
+  test "restarts engines when field config changes" do
     owner = self()
     device_id = 2
     running_pid = spawn(fn -> Process.sleep(:infinity) end)
@@ -99,7 +99,7 @@ defmodule ModbusMqtt.Engine.ReconcilerTest do
       base_topic: "b",
       unit: 1,
       transport_config: %{},
-      registers: [
+      fields: [
         %{
           id: 10,
           name: "power",
@@ -118,7 +118,7 @@ defmodule ModbusMqtt.Engine.ReconcilerTest do
       ]
     }
 
-    changed = put_in(initial, [:registers, Access.at(0), :poll_interval_ms], 2000)
+    changed = put_in(initial, [:fields, Access.at(0), :poll_interval_ms], 2000)
 
     updates = [initial, changed]
     {:ok, updates_agent} = Agent.start_link(fn -> updates end)
@@ -184,7 +184,7 @@ defmodule ModbusMqtt.Engine.ReconcilerTest do
               base_topic: "c",
               unit: 1,
               transport_config: %{},
-              registers: []
+              fields: []
             }
           ]
         ]
@@ -236,7 +236,7 @@ defmodule ModbusMqtt.Engine.ReconcilerTest do
       base_topic: "d",
       unit: 1,
       transport_config: %{},
-      registers: []
+      fields: []
     }
 
     {:ok, call_count} = Agent.start_link(fn -> 0 end)

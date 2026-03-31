@@ -3,10 +3,10 @@
 #     mix run priv/repo/seeds.exs
 
 alias ModbusMqtt.Repo
-alias ModbusMqtt.Devices.{Device, Register}
+alias ModbusMqtt.Devices.{Device, Field}
 
 # Clean existing to ensure idempotency when running seeds multiple times
-Repo.delete_all(Register)
+Repo.delete_all(Field)
 Repo.delete_all(Device)
 
 device =
@@ -22,7 +22,7 @@ device =
     }
   })
 
-registers = [
+fields = [
   %{address: 5017, data_type: :uint32, name: "dc_power", swap_words: true, poll_interval_ms: 500},
   %{
     address: 13034,
@@ -144,30 +144,30 @@ registers = [
   %{address: 13041, data_type: :uint32, swap_words: true, name: "total_charge_energy", scale: -1}
 ]
 
-for reg <- registers do
-  data_type = Map.get(reg, :data_type, :uint16)
+for field <- fields do
+  data_type = Map.get(field, :data_type, :uint16)
 
   length =
-    Map.get(reg, :length) ||
+    Map.get(field, :length) ||
       case data_type do
         dt when dt in [:int32, :uint32, :float32] -> 2
         _ -> 1
       end
 
-  Repo.insert!(%Register{
+  Repo.insert!(%Field{
     device_id: device.id,
-    name: reg[:name],
-    type: Map.get(reg, :type, :input_register),
+    name: field[:name],
+    type: Map.get(field, :type, :input_register),
     data_type: data_type,
-    address: reg[:address],
+    address: field[:address],
     address_offset: -1,
-    poll_interval_ms: Map.get(reg, :poll_interval_ms, 5000),
-    writable: Map.get(reg, :type) == :holding_register,
-    scale: Map.get(reg, :scale, 0),
-    swap_words: Map.get(reg, :swap_words, false),
-    swap_bytes: Map.get(reg, :swap_bytes, false),
-    value_semantics: Map.get(reg, :value_semantics, :raw),
-    enum_map: Map.get(reg, :enum_map, %{}),
+    poll_interval_ms: Map.get(field, :poll_interval_ms, 5000),
+    writable: Map.get(field, :type) == :holding_register,
+    scale: Map.get(field, :scale, 0),
+    swap_words: Map.get(field, :swap_words, false),
+    swap_bytes: Map.get(field, :swap_bytes, false),
+    value_semantics: Map.get(field, :value_semantics, :raw),
+    enum_map: Map.get(field, :enum_map, %{}),
     length: length
   })
 end

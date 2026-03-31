@@ -1,12 +1,12 @@
-defmodule ModbusMqtt.Devices.RegisterTest do
+defmodule ModbusMqtt.Devices.FieldTest do
   use ModbusMqtt.DataCase, async: true
 
-  alias ModbusMqtt.Devices.Register
+  alias ModbusMqtt.Devices.Field
 
   test "accepts enum map keys in decimal, hex, and binary notation" do
     changeset =
-      Register.changeset(
-        %Register{},
+      Field.changeset(
+        %Field{},
         valid_attrs(%{"100" => "normal", "0xAA" => "alarm", "0b11" => "eco"})
       )
 
@@ -14,7 +14,7 @@ defmodule ModbusMqtt.Devices.RegisterTest do
   end
 
   test "rejects invalid enum map keys" do
-    changeset = Register.changeset(%Register{}, valid_attrs(%{"0xZZ" => "bad"}))
+    changeset = Field.changeset(%Field{}, valid_attrs(%{"0xZZ" => "bad"}))
 
     refute changeset.valid?
 
@@ -25,7 +25,7 @@ defmodule ModbusMqtt.Devices.RegisterTest do
 
   test "rejects duplicate numeric enum key mappings" do
     changeset =
-      Register.changeset(%Register{}, valid_attrs(%{"170" => "normal", "0xAA" => "alarm"}))
+      Field.changeset(%Field{}, valid_attrs(%{"170" => "normal", "0xAA" => "alarm"}))
 
     refute changeset.valid?
 
@@ -40,7 +40,7 @@ defmodule ModbusMqtt.Devices.RegisterTest do
       |> valid_attrs()
       |> Map.put(:data_type, :uint32)
 
-    changeset = Register.changeset(%Register{}, attrs)
+    changeset = Field.changeset(%Field{}, attrs)
 
     refute changeset.valid?
     assert "must be uint16 when value_semantics is enum" in errors_on(changeset).data_type
@@ -52,14 +52,14 @@ defmodule ModbusMqtt.Devices.RegisterTest do
       |> valid_attrs()
       |> Map.put(:scale, 1)
 
-    changeset = Register.changeset(%Register{}, attrs)
+    changeset = Field.changeset(%Field{}, attrs)
 
     refute changeset.valid?
     assert "must be equal to 0" in errors_on(changeset).scale
   end
 
   test "rejects empty enum map" do
-    changeset = Register.changeset(%Register{}, valid_attrs(%{}))
+    changeset = Field.changeset(%Field{}, valid_attrs(%{}))
 
     refute changeset.valid?
     assert "must contain at least one entry" in errors_on(changeset).enum_map

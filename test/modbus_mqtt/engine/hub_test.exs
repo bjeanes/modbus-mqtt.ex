@@ -18,17 +18,17 @@ defmodule ModbusMqtt.Engine.HubTest do
          send(test_pid, {:published, topic, payload, opts})
          :ok
        end,
-       broadcast_fun: fn _pubsub, device_id, register_name, value ->
-         send(test_pid, {:broadcast, device_id, register_name, value})
+       broadcast_fun: fn _pubsub, device_id, field_name, value ->
+         send(test_pid, {:broadcast, device_id, field_name, value})
          :ok
        end}
     )
 
     device = %{id: 7, name: "Hub Device", base_topic: nil}
-    register = %{name: "power"}
+    field = %{name: "power"}
 
     reading = %{bytes: [0, 10], decoded: 10, value: 10, formatted: "10"}
-    Hub.put_value(server, device, register, reading)
+    Hub.put_value(server, device, field, reading)
 
     assert_receive {:broadcast, 7, "power", 10}
     assert_receive {:published, "modbus_mqtt/7/power", "10", []}
@@ -43,7 +43,7 @@ defmodule ModbusMqtt.Engine.HubTest do
       formatted: "running"
     }
 
-    Hub.put_value(server, device, register, same_bytes_different_derived)
+    Hub.put_value(server, device, field, same_bytes_different_derived)
 
     refute_receive {:broadcast, 7, "power", "running"}
     refute_receive {:published, "modbus_mqtt/7/power", "running", []}
@@ -64,14 +64,14 @@ defmodule ModbusMqtt.Engine.HubTest do
          send(test_pid, {:published, topic, payload, opts})
          :ok
        end,
-       broadcast_fun: fn _pubsub, device_id, register_name, value ->
-         send(test_pid, {:broadcast, device_id, register_name, value})
+       broadcast_fun: fn _pubsub, device_id, field_name, value ->
+         send(test_pid, {:broadcast, device_id, field_name, value})
          :ok
        end}
     )
 
     device = %{id: 8, name: "Hub Device", base_topic: nil}
-    register = %{name: "energy"}
+    field = %{name: "energy"}
 
     reading = %{
       bytes: [0x30, 0x39],
@@ -80,7 +80,7 @@ defmodule ModbusMqtt.Engine.HubTest do
       formatted: "123.45"
     }
 
-    Hub.put_value(server, device, register, reading)
+    Hub.put_value(server, device, field, reading)
 
     assert_receive {:broadcast, 8, "energy", %Decimal{} = value}
     assert D.equal?(value, D.new("123.45"))
@@ -94,7 +94,7 @@ defmodule ModbusMqtt.Engine.HubTest do
            }
   end
 
-  test "publishes semantic value for enum registers while preserving decoded in detail" do
+  test "publishes semantic value for enum fields while preserving decoded in detail" do
     test_pid = self()
     server = String.to_atom("hub_server_#{System.unique_integer([:positive])}")
     table = String.to_atom("hub_table_#{System.unique_integer([:positive])}")
@@ -108,17 +108,17 @@ defmodule ModbusMqtt.Engine.HubTest do
          send(test_pid, {:published, topic, payload, opts})
          :ok
        end,
-       broadcast_fun: fn _pubsub, device_id, register_name, value ->
-         send(test_pid, {:broadcast, device_id, register_name, value})
+       broadcast_fun: fn _pubsub, device_id, field_name, value ->
+         send(test_pid, {:broadcast, device_id, field_name, value})
          :ok
        end}
     )
 
     device = %{id: 9, name: "Hub Device", base_topic: nil}
-    register = %{name: "mode"}
+    field = %{name: "mode"}
     reading = %{bytes: [0x00, 0xAA], decoded: 170, value: "maintenance", formatted: "maintenance"}
 
-    Hub.put_value(server, device, register, reading)
+    Hub.put_value(server, device, field, reading)
 
     assert_receive {:broadcast, 9, "mode", "maintenance"}
     assert_receive {:published, "modbus_mqtt/9/mode", "maintenance", []}

@@ -12,7 +12,7 @@ defmodule ModbusMqtt.Devices.Device do
     field :unit, :integer, default: 1
     field :transport_config, :map, default: %{}
 
-    has_many :registers, ModbusMqtt.Devices.Register
+    has_many :fields, ModbusMqtt.Devices.Field
 
     timestamps(type: :utc_datetime)
   end

@@ -1,4 +1,4 @@
-defmodule ModbusMqtt.Engine.RegisterValue do
+defmodule ModbusMqtt.Engine.FieldCodec do
   @moduledoc """
   Pure helpers for decoding and scaling raw Modbus register values.
   """
@@ -20,10 +20,10 @@ defmodule ModbusMqtt.Engine.RegisterValue do
   def word_count(:uint32), do: 2
   def word_count(_), do: 1
 
-  def decode(values, register) do
+  def decode(values, field) do
     values
-    |> parse_value(register.data_type, register.swap_words, register.swap_bytes)
-    |> scale(register.scale)
+    |> parse_value(field.data_type, field.swap_words, field.swap_bytes)
+    |> scale(field.scale)
   end
 
   def scale(value, scale) when is_number(value) and scale != 0 do

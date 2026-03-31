@@ -1,10 +1,10 @@
-defmodule ModbusMqtt.Devices.Register do
+defmodule ModbusMqtt.Devices.Field do
   use Ecto.Schema
   import Ecto.Changeset
 
   @enum_register_types [:holding_register, :input_register]
 
-  schema "registers" do
+  schema "fields" do
     field :name, :string
 
     field :type, Ecto.Enum,
@@ -32,8 +32,8 @@ defmodule ModbusMqtt.Devices.Register do
   end
 
   @doc false
-  def changeset(register, attrs) do
-    register
+  def changeset(field, attrs) do
+    field
     |> cast(attrs, [
       :name,
       :type,
@@ -105,7 +105,7 @@ defmodule ModbusMqtt.Devices.Register do
     case get_field(changeset, :data_type) do
       :string ->
         changeset
-        |> validate_required([:length], message: "is required for string registers")
+        |> validate_required([:length], message: "is required for string fields")
         |> validate_number(:length, greater_than: 0)
 
       _ ->

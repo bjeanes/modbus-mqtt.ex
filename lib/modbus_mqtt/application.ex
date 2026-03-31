@@ -17,6 +17,8 @@ defmodule ModbusMqtt.Application do
       {Registry, keys: :unique, name: ModbusMqtt.Registry},
       ModbusMqtt.Mqtt.Status,
       ModbusMqtt.Mqtt.Supervisor,
+      # ETS cache of raw Modbus register words
+      ModbusMqtt.Engine.RegisterCache,
       # The state cache for filtering deltas and live views
       ModbusMqtt.Engine.Hub,
       ModbusMqtt.Engine.Supervisor,
