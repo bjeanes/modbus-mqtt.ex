@@ -118,7 +118,7 @@ defmodule ModbusMqtt.Engine.Hub do
     %{bytes: [], decoded: value, value: value, formatted: FieldSemantics.format(value)}
   end
 
-  defp json_value(%Decimal{} = value), do: Decimal.to_float(value)
+  defp json_value(%Decimal{} = value), do: Jason.Fragment.new(Decimal.to_string(value, :normal))
   defp json_value(value), do: value
 
   def publish_mqtt(topic, payload, opts) do
