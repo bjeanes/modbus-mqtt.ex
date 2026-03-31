@@ -33,6 +33,14 @@ defmodule ModbusMqtt.Mqtt.Status do
     set_device_status(server, device, "connecting")
   end
 
+  def device_retrying_connection(device, attempt) do
+    device_retrying_connection(__MODULE__, device, attempt)
+  end
+
+  def device_retrying_connection(server, device, _attempt) do
+    GenServer.cast(server, {:device_state, device, "retrying_connection", nil})
+  end
+
   def device_connected(device) do
     device_connected(__MODULE__, device)
   end

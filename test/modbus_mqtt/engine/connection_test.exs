@@ -7,6 +7,10 @@ defmodule ModbusMqtt.Engine.ConnectionTest do
     def device_connecting(device), do: send(device.test_pid, {:status, :connecting, device.id})
     def device_connected(device), do: send(device.test_pid, {:status, :connected, device.id})
 
+    def device_retrying_connection(device, attempt) do
+      send(device.test_pid, {:status, :retrying_connection, device.id, attempt})
+    end
+
     def device_connection_failed(device, message) do
       send(device.test_pid, {:status, :connection_failed, device.id, message})
     end
@@ -103,10 +107,148 @@ defmodule ModbusMqtt.Engine.ConnectionTest do
       }
     }
 
-    {:ok, pid} = Connection.start_link({device, [client: FakeClient, status: FakeStatus]})
+    {:ok, pid} =
+      Connection.start_link({device, [client: FakeClient, status: FakeStatus, max_retries: 0]})
+
     assert_receive {:status, :connecting, ^device_id}
     assert_receive {:status, :connection_failed, ^device_id, message}
     assert message =~ "failed to connect"
     assert_receive {:EXIT, ^pid, :boom}
+  end
+
+  test "retries connection with exponential backoff on temporary failure" do
+    trap_exit? = Process.flag(:trap_exit, true)
+    on_exit(fn -> Process.flag(:trap_exit, trap_exit?) end)
+
+    device_id = System.unique_integer([:positive])
+
+    # State variable to track how many times open was called
+    {:ok, call_count} = Agent.start_link(fn -> 0 end)
+
+    defmodule FakeClientWithRetries do
+      @behaviour ModbusMqtt.Client
+
+      def open(config) do
+        call_count_pid = config["call_count_pid"]
+        current_count = Agent.get(call_count_pid, & &1)
+        Agent.update(call_count_pid, &(&1 + 1))
+
+        if current_count < 2 do
+          # Fail the first 2 attempts
+          {:error, :temporary_failure}
+        else
+          # Succeed on the 3rd attempt
+          Agent.start_link(fn -> config end)
+        end
+      end
+
+      def close(pid) do
+        config = Agent.get(pid, & &1)
+        send(config["test_pid"], {:client_close, config["device_id"]})
+        Agent.stop(pid)
+        :ok
+      end
+
+      def read_holding_registers(pid, unit, address, count) do
+        config = Agent.get(pid, & &1)
+        send(config["test_pid"], {:read_holding_registers, unit, address, count})
+        {:ok, config["read_values"] || [123]}
+      end
+
+      def read_coils(_pid, _unit, _address, _count), do: {:ok, []}
+      def read_discrete_inputs(_pid, _unit, _address, _count), do: {:ok, []}
+      def read_input_registers(_pid, _unit, _address, _count), do: {:ok, []}
+    end
+
+    device = %{
+      id: device_id,
+      name: "Retry Device",
+      protocol: :tcp,
+      unit: 1,
+      test_pid: self(),
+      transport_config: %{
+        "host" => "127.0.0.1",
+        "device_id" => device_id,
+        "test_pid" => self(),
+        "call_count_pid" => call_count
+      }
+    }
+
+    {:ok, pid} =
+      Connection.start_link(
+        {device,
+         [
+           client: FakeClientWithRetries,
+           status: FakeStatus,
+           max_retries: 5,
+           base_delay_ms: 100,
+           max_delay_ms: 500
+         ]}
+      )
+
+    assert_receive {:status, :connecting, ^device_id}
+    assert_receive {:status, :retrying_connection, ^device_id, 1}, 1000
+    assert_receive {:status, :retrying_connection, ^device_id, 2}, 1000
+    assert_receive {:status, :connected, ^device_id}, 1000
+
+    # Verify the connection is working
+    assert Connection.read_holding_registers(device_id, 1, 0, 1) == {:ok, [123]}
+
+    GenServer.stop(pid)
+    assert_receive {:client_close, ^device_id}
+
+    Agent.stop(call_count)
+  end
+
+  test "stops after exceeding max retries" do
+    trap_exit? = Process.flag(:trap_exit, true)
+    on_exit(fn -> Process.flag(:trap_exit, trap_exit?) end)
+
+    device_id = System.unique_integer([:positive])
+
+    defmodule FakeClientAlwaysFails do
+      @behaviour ModbusMqtt.Client
+
+      def open(_config) do
+        {:error, :permanent_failure}
+      end
+
+      def close(_pid), do: :ok
+      def read_holding_registers(_pid, _unit, _address, _count), do: {:ok, []}
+      def read_coils(_pid, _unit, _address, _count), do: {:ok, []}
+      def read_discrete_inputs(_pid, _unit, _address, _count), do: {:ok, []}
+      def read_input_registers(_pid, _unit, _address, _count), do: {:ok, []}
+    end
+
+    device = %{
+      id: device_id,
+      name: "Always Broken Device",
+      protocol: :tcp,
+      unit: 1,
+      test_pid: self(),
+      transport_config: %{
+        "host" => "127.0.0.1",
+        "device_id" => device_id,
+        "test_pid" => self()
+      }
+    }
+
+    {:ok, pid} =
+      Connection.start_link(
+        {device,
+         [
+           client: FakeClientAlwaysFails,
+           status: FakeStatus,
+           max_retries: 2,
+           base_delay_ms: 50,
+           max_delay_ms: 100
+         ]}
+      )
+
+    assert_receive {:status, :connecting, ^device_id}
+    assert_receive {:status, :retrying_connection, ^device_id, 1}, 2000
+    assert_receive {:status, :retrying_connection, ^device_id, 2}, 2000
+    assert_receive {:status, :connection_failed, ^device_id, _message}, 2000
+    assert_receive {:EXIT, ^pid, :permanent_failure}
   end
 end
