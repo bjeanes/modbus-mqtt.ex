@@ -146,6 +146,23 @@ defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
     assert count_occurrences(svg, "<polyline") == 1
   end
 
+  test "backfills dashed sparkline history to the first real value", %{conn: conn} do
+    device = device_fixture!("Backfill")
+    field = field_fixture!(device, "temperature")
+
+    {:ok, view, _html} = live(conn, ~p"/devices/#{device.id}/dashboard")
+
+    emit_update(device.id, field.name, 37, "37")
+
+    wait_for(fn -> has_element?(view, "#sparkline-#{field.id}") end)
+
+    svg = sparkline_svg!(render(view), field.id)
+    y_coords = svg |> dashed_polyline_points!() |> y_coords_from_points()
+
+    assert length(y_coords) >= 2
+    assert Enum.all?(y_coords, &(&1 == hd(y_coords)))
+  end
+
   test "supports alphabetical, recent, and frequency sort modes", %{conn: conn} do
     device = device_fixture!("Sorter")
     field_a = field_fixture!(device, "alpha")
@@ -354,6 +371,22 @@ defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
     |> String.split(token)
     |> length()
     |> Kernel.-(1)
+  end
+
+  defp dashed_polyline_points!(svg) do
+    case Regex.run(~r/<polyline[^>]*stroke-dasharray="4 3"[^>]*points="([^"]+)"/, svg) do
+      [_, points] -> points
+      _ -> flunk("expected dashed sparkline polyline")
+    end
+  end
+
+  defp y_coords_from_points(points) do
+    points
+    |> String.split(" ", trim: true)
+    |> Enum.map(fn point ->
+      [_x, y] = String.split(point, ",", parts: 2)
+      y
+    end)
   end
 
   defp wait_for(fun, attempts \\ 30)

@@ -443,6 +443,7 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
       numeric ->
         update(socket, :numeric_history, fn history ->
           points = Map.get(history, field_name, [])
+          points = maybe_backfill_default_points(points, numeric)
           new_points = [{now, numeric, :real} | points] |> prune_points(now)
           Map.put(history, field_name, new_points)
         end)
@@ -459,7 +460,7 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
             %{value: value} ->
               case numeric_value(value) do
                 nil -> default_points(now, 0.0)
-                numeric -> [{now, numeric, :real} | default_points(now, 0.0)]
+                numeric -> [{now, numeric, :real} | default_points(now, numeric)]
               end
 
             _ ->
@@ -497,6 +498,14 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
     Enum.filter(points, fn {ts, _value, _kind} ->
       DateTime.diff(now, ts, :second) <= @history_window_secs
     end)
+  end
+
+  defp maybe_backfill_default_points(points, first_value) do
+    if Enum.any?(points, fn {_ts, _value, kind} -> kind == :real end) do
+      points
+    else
+      Enum.map(points, fn {ts, _value, kind} -> {ts, first_value, kind} end)
+    end
   end
 
   defp sparkline_series_for(history, field_name, now) do
