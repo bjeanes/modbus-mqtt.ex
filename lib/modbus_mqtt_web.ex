@@ -86,6 +86,7 @@ defmodule ModbusMqttWeb do
       import Phoenix.HTML
       # Core UI components
       import ModbusMqttWeb.CoreComponents
+      import ModbusMqttWeb.DeviceDashboardSparklineComponents
 
       # Common modules used in templates
       alias Phoenix.LiveView.JS
