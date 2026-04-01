@@ -34,6 +34,29 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
   end
 
   @impl true
+  def handle_event("stage_write", %{"field_id" => raw_field_id} = params, socket) do
+    with {field_id, ""} <- Integer.parse(raw_field_id),
+         field when not is_nil(field) <- Map.get(socket.assigns.fields_by_id, field_id),
+         true <- Field.writable?(field),
+         {:ok, staged_value} <- staged_value_from_params(field, params) do
+      reading = Map.get(socket.assigns.readings, field.name)
+      current_input = current_input_value(field, reading)
+
+      staged_writes =
+        if is_nil(staged_value) or staged_value == current_input do
+          Map.delete(socket.assigns.staged_writes, field.name)
+        else
+          Map.put(socket.assigns.staged_writes, field.name, staged_value)
+        end
+
+      {:noreply, assign(socket, :staged_writes, staged_writes)}
+    else
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  @impl true
   def handle_event("write_field", %{"field_id" => raw_field_id} = params, socket) do
     with {field_id, ""} <- Integer.parse(raw_field_id),
          field when not is_nil(field) <- Map.get(socket.assigns.fields_by_id, field_id),
@@ -70,6 +93,7 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
       |> maybe_put_reading(field_name, reading)
       |> maybe_append_numeric_history(field_name, reading, now)
       |> track_field_update(field_name, now)
+      |> maybe_clear_staged_write(field_name, reading)
       |> update(:write_statuses, &Map.delete(&1, field_name))
       |> put_flash_field(field_name)
 
@@ -77,7 +101,12 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
   end
 
   def handle_info({:field_write_status, field_name, status}, socket) do
-    {:noreply, update(socket, :write_statuses, &Map.put(&1, field_name, status))}
+    socket =
+      socket
+      |> update(:write_statuses, &Map.put(&1, field_name, status))
+      |> maybe_clear_staged_write_on_confirmed(field_name, status)
+
+    {:noreply, socket}
   end
 
   def handle_info({:field_value_changed, _device_id, field_name, _value}, socket) do
@@ -201,6 +230,7 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
                 <tbody>
                   <%= for field <- writable_fields do %>
                     <% reading = Map.get(@readings, field.name) %>
+                    <% staged = Map.get(@staged_writes, field.name) %>
                     <% flashing? = MapSet.member?(@flashed_fields, field.name) %>
                     <tr
                       id={"field-#{field.id}"}
@@ -221,12 +251,13 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
                         <.form
                           for={%{}}
                           id={"write-field-#{field.id}"}
+                          phx-change="stage_write"
                           phx-submit="write_field"
                           class="mb-0"
                         >
                           <input type="hidden" name="field_id" value={field.id} />
 
-                          <div id={"write-control-#{field.id}"} phx-update="ignore">
+                          <div id={"write-control-#{field.id}"}>
                             <%= case write_input_kind(field) do %>
                               <% :boolean -> %>
                                 <div class="flex items-center gap-2">
@@ -234,11 +265,17 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
                                     type="checkbox"
                                     id={"write-value-#{field.id}"}
                                     name="value"
-                                    checked={checkbox_checked?(reading)}
+                                    checked={checkbox_checked_with_stage(staged, reading)}
                                     class="checkbox checkbox-sm"
                                     label="Set"
                                   />
-                                  <button type="submit" class="btn btn-xs btn-primary">Write</button>
+                                  <button
+                                    :if={not is_nil(staged)}
+                                    type="submit"
+                                    class="btn btn-xs btn-primary"
+                                  >
+                                    Write
+                                  </button>
                                 </div>
                               <% :enum -> %>
                                 <div class="flex items-center gap-2">
@@ -246,11 +283,17 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
                                     type="select"
                                     id={"write-value-#{field.id}"}
                                     name="value"
-                                    value={enum_selected_value(reading)}
+                                    value={staged || enum_selected_value(reading)}
                                     options={enum_options(field)}
                                     class="select select-sm w-48"
                                   />
-                                  <button type="submit" class="btn btn-xs btn-primary">Write</button>
+                                  <button
+                                    :if={not is_nil(staged)}
+                                    type="submit"
+                                    class="btn btn-xs btn-primary"
+                                  >
+                                    Write
+                                  </button>
                                 </div>
                               <% :number -> %>
                                 <div class="flex items-center gap-2">
@@ -258,11 +301,17 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
                                     type="number"
                                     id={"write-value-#{field.id}"}
                                     name="value"
-                                    value={numeric_input_value(reading)}
+                                    value={staged || numeric_input_value(reading)}
                                     step={numeric_step(field)}
                                     class="input input-sm w-36"
                                   />
-                                  <button type="submit" class="btn btn-xs btn-primary">Write</button>
+                                  <button
+                                    :if={not is_nil(staged)}
+                                    type="submit"
+                                    class="btn btn-xs btn-primary"
+                                  >
+                                    Write
+                                  </button>
                                 </div>
                               <% :unsupported -> %>
                                 <span class="text-xs text-base-content/60">Unsupported</span>
@@ -358,6 +407,7 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
          |> assign(:device, device)
          |> assign(:fields, fields)
          |> assign(:fields_by_id, Map.new(fields, &{&1.id, &1}))
+         |> assign(:fields_by_name, Map.new(fields, &{&1.name, &1}))
          |> assign(:sort_mode, :alphabetical)
          |> assign(:update_counts, %{})
          |> assign(:last_update_by_field, %{})
@@ -365,6 +415,7 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
          |> assign(:numeric_history, build_initial_numeric_history(fields, readings, now))
          |> assign(:flashed_fields, MapSet.new())
          |> assign(:flash_timers, %{})
+         |> assign(:staged_writes, %{})
          |> assign(:write_statuses, %{})
          |> assign(:now, now)}
 
@@ -712,6 +763,62 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
   defp extract_write_value(%{"value" => value}), do: {:ok, value}
   defp extract_write_value(_params), do: {:error, :missing_value}
 
+  defp staged_value_from_params(field, params) do
+    case write_input_kind(field) do
+      :boolean ->
+        value = if truthy_checkbox?(Map.get(params, "value")), do: "true", else: "false"
+        {:ok, value}
+
+      :enum ->
+        {:ok, normalize_string_param(Map.get(params, "value"))}
+
+      :number ->
+        {:ok, normalize_string_param(Map.get(params, "value"))}
+
+      :unsupported ->
+        {:error, :unsupported}
+    end
+  end
+
+  defp normalize_string_param(value) when is_binary(value) do
+    trimmed = String.trim(value)
+    if trimmed == "", do: nil, else: trimmed
+  end
+
+  defp normalize_string_param(_), do: nil
+
+  defp current_input_value(field, reading) do
+    case write_input_kind(field) do
+      :boolean -> if(checkbox_checked?(reading), do: "true", else: "false")
+      :enum -> enum_selected_value(reading)
+      :number -> numeric_input_value(reading)
+      :unsupported -> nil
+    end
+  end
+
+  defp maybe_clear_staged_write(socket, field_name, reading) do
+    case Map.fetch(socket.assigns.staged_writes, field_name) do
+      :error ->
+        socket
+
+      {:ok, staged_value} ->
+        field = Map.get(socket.assigns.fields_by_name, field_name)
+        current = current_input_value(field, reading)
+
+        if staged_value == current do
+          update(socket, :staged_writes, &Map.delete(&1, field_name))
+        else
+          socket
+        end
+    end
+  end
+
+  defp maybe_clear_staged_write_on_confirmed(socket, field_name, %{state: :written}) do
+    update(socket, :staged_writes, &Map.delete(&1, field_name))
+  end
+
+  defp maybe_clear_staged_write_on_confirmed(socket, _field_name, _status), do: socket
+
   defp write_input_kind(field) do
     cond do
       field.value_semantics == :enum -> :enum
@@ -733,6 +840,13 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
 
   defp checkbox_checked?(%{value: value}) when value in [true, 1], do: true
   defp checkbox_checked?(_reading), do: false
+
+  defp checkbox_checked_with_stage("true", _reading), do: true
+  defp checkbox_checked_with_stage("false", _reading), do: false
+  defp checkbox_checked_with_stage(_staged, reading), do: checkbox_checked?(reading)
+
+  defp truthy_checkbox?(value) when value in [true, 1, "1", "true", "on"], do: true
+  defp truthy_checkbox?(_), do: false
 
   defp enum_options(field) do
     field

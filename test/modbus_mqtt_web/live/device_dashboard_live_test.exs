@@ -234,6 +234,34 @@ defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
     assert has_element?(view, "#readonly-register-table #field-#{readonly_field.id}")
   end
 
+  test "shows Write only for staged changes and clears when update matches", %{conn: conn} do
+    device = device_fixture!("Staging")
+
+    numeric_field =
+      field_fixture!(device, "setpoint", %{
+        type: :holding_register,
+        data_type: :uint16,
+        value_semantics: :raw
+      })
+
+    put_hub_reading!(device.id, numeric_field.name, 20, "20")
+
+    {:ok, view, _html} = live(conn, ~p"/devices/#{device.id}/dashboard")
+
+    refute has_element?(view, "#write-field-#{numeric_field.id} button", "Write")
+
+    render_change(element(view, "#write-field-#{numeric_field.id}"), %{
+      "field_id" => Integer.to_string(numeric_field.id),
+      "value" => "22"
+    })
+
+    assert has_element?(view, "#write-field-#{numeric_field.id} button", "Write")
+
+    emit_update(device.id, numeric_field.name, 22, "22")
+
+    wait_for(fn -> not has_element?(view, "#write-field-#{numeric_field.id} button", "Write") end)
+  end
+
   test "renders 0 in numeric write input for NaN and infinite Decimal values", %{conn: conn} do
     device = device_fixture!("NaN Device")
 
