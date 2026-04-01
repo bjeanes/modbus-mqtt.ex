@@ -19,6 +19,10 @@ defmodule ModbusMqtt.Mqtt.HandlerTest do
     end
   end
 
+  defmodule FailingWriter do
+    def write(_device, _field, _value), do: {:error, :device_not_running}
+  end
+
   test "handles inbound /set payloads and routes decoded value to writer" do
     {:ok, state} = Handler.init(devices: FakeDevices, writer: FakeWriter)
 
@@ -59,5 +63,12 @@ defmodule ModbusMqtt.Mqtt.HandlerTest do
 
     assert {:ok, ^state} = Handler.handle_message("custom/dev-1/mode/set", "42", state)
     assert_receive {:write, %{name: "Device 1"}, %{name: "mode"}, 42}
+  end
+
+  test "returns ok state when writer returns error" do
+    {:ok, state} = Handler.init(devices: FakeDevices, writer: FailingWriter)
+
+    assert {:ok, ^state} = Handler.handle_message("modbus_mqtt/dev-1/mode/set", "42", state)
+    refute_receive {:write, _, _, _}
   end
 end

@@ -28,17 +28,14 @@ defmodule ModbusMqtt.Mqtt.Handler do
   end
 
   def handle_message(topic, payload, state) do
-    with {:ok, {device_topic, field_topic}} <-
-           Topics.parse_set_topic(topic, base_segments: state.base_segments),
-         {device, field} <- state.devices.find_active_field_by_topic(device_topic, field_topic),
-         {:ok, value} <- decode_payload(payload),
-         :ok <- state.writer.write(device, field, value) do
-      Logger.info("Queued MQTT write for #{device.name}:#{field.name} to #{inspect(value)}")
-    else
-      {:error, :not_set_topic} ->
+    case process_message(topic, payload, state) do
+      {:queued, device, field, value} ->
+        Logger.info("Queued MQTT write for #{device.name}:#{field.name} to #{inspect(value)}")
+
+      {:ignored, :not_set_topic} ->
         :ok
 
-      nil ->
+      {:ignored, :unknown_field} ->
         Logger.warning("Ignoring MQTT write for unknown field topic #{inspect(topic)}")
 
       {:error, reason} ->
@@ -68,4 +65,18 @@ defmodule ModbusMqtt.Mqtt.Handler do
   end
 
   defp decode_payload(payload), do: {:ok, payload}
+
+  defp process_message(topic, payload, state) do
+    with {:ok, {device_topic, field_topic}} <-
+           Topics.parse_set_topic(topic, base_segments: state.base_segments),
+         {device, field} <- state.devices.find_active_field_by_topic(device_topic, field_topic),
+         {:ok, value} <- decode_payload(payload),
+         :ok <- state.writer.write(device, field, value) do
+      {:queued, device, field, value}
+    else
+      {:error, :not_set_topic} -> {:ignored, :not_set_topic}
+      nil -> {:ignored, :unknown_field}
+      {:error, reason} -> {:error, reason}
+    end
+  end
 end
