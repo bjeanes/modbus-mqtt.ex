@@ -37,15 +37,15 @@ defmodule ModbusMqtt.Mqtt.Topics do
   end
 
   def device_value_topic(device, field) do
-    join([base_topic(), Topic.key(device), field.name])
+    join(device_field_topic_parts(device, field))
   end
 
   def device_value_detail_topic(device, field) do
-    join([base_topic(), Topic.key(device), field.name, @detail_segment])
+    join(device_field_topic_parts(device, field) ++ [@detail_segment])
   end
 
   def device_value_set_topic(device, field) do
-    join([base_topic(), Topic.key(device), field.name, @set_segment])
+    join(device_field_topic_parts(device, field) ++ [@set_segment])
   end
 
   def device_value_set_topic_filter do
@@ -53,11 +53,11 @@ defmodule ModbusMqtt.Mqtt.Topics do
   end
 
   def device_status_topic(device_meta) do
-    join([base_topic(), @devices_segment, Topic.key(device_meta), @status_segment])
+    join(device_meta_topic_parts(device_meta) ++ [@status_segment])
   end
 
   def device_last_error_topic(device_meta) do
-    join([base_topic(), @devices_segment, Topic.key(device_meta), @last_error_segment])
+    join(device_meta_topic_parts(device_meta) ++ [@last_error_segment])
   end
 
   def join(parts) do
@@ -111,5 +111,13 @@ defmodule ModbusMqtt.Mqtt.Topics do
   defp base_topic_segments do
     base_topic()
     |> normalize_base_segments()
+  end
+
+  defp device_field_topic_parts(device, field) do
+    [base_topic(), Topic.key(device), field.name]
+  end
+
+  defp device_meta_topic_parts(device_meta) do
+    [base_topic(), @devices_segment, Topic.key(device_meta)]
   end
 end
