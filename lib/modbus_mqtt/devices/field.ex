@@ -19,7 +19,7 @@ defmodule ModbusMqtt.Devices.Field do
 
     field :address, :integer
     field :address_offset, :integer, default: 0
-    field :poll_interval_ms, :integer, default: 5000
+    field :poll_interval_ms, :integer, default: 60_1000
     field :scale, :integer, default: 0
     field :swap_words, :boolean, default: false
     field :swap_bytes, :boolean, default: false
