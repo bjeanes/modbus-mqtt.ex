@@ -94,13 +94,16 @@ defmodule ModbusMqtt.Mqtt.Topics do
   end
 
   defp normalize_topic_segments(topic_levels) when is_list(topic_levels) do
-    if Enum.all?(topic_levels, &is_binary/1) do
-      {:ok, topic_levels}
-    else
-      normalize_topic_segments(to_string(topic_levels))
+    cond do
+      Enum.all?(topic_levels, &is_binary/1) ->
+        {:ok, topic_levels}
+
+      Enum.all?(topic_levels, &is_integer/1) and List.ascii_printable?(topic_levels) ->
+        normalize_topic_segments(to_string(topic_levels))
+
+      true ->
+        {:error, :not_set_topic}
     end
-  rescue
-    ArgumentError -> {:error, :not_set_topic}
   end
 
   defp normalize_topic_segments(_topic), do: {:error, :not_set_topic}
