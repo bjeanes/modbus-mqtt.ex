@@ -18,7 +18,10 @@ defmodule ModbusMqtt.Mqtt.Supervisor do
       client_id: client_id(),
       server: server_opt,
       handler: {ModbusMqtt.Mqtt.Handler, []},
-      subscriptions: [{ModbusMqtt.Mqtt.Topics.device_value_set_topic_filter(), 0}],
+      subscriptions: [
+        {ModbusMqtt.Mqtt.Topics.device_value_set_topic_filter(), 0},
+        {ModbusMqtt.Mqtt.Topics.home_assistant_status_topic(), 0}
+      ],
       will: bridge_last_will()
     ]
 

@@ -259,6 +259,19 @@ fields = [
     unit: "%"
   },
   %{
+    name: "ems_mode",
+    address: 13050,
+    data_type: :uint16,
+    type: :holding_register,
+    value_semantics: :enum,
+    enum_map: %{
+      "0" => "self-consumption",
+      "2" => "forced",
+      "3" => "external",
+      "4" => "vpp"
+    }
+  },
+  %{
     address: 13051,
     data_type: :uint16,
     type: :holding_register,

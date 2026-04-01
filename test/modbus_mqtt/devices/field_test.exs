@@ -1,7 +1,9 @@
 defmodule ModbusMqtt.Devices.FieldTest do
   use ModbusMqtt.DataCase, async: true
 
+  alias ModbusMqtt.Devices.Device
   alias ModbusMqtt.Devices.Field
+  alias ModbusMqtt.Repo
 
   test "accepts enum map keys in decimal, hex, and binary notation" do
     changeset =
@@ -114,6 +116,34 @@ defmodule ModbusMqtt.Devices.FieldTest do
     assert Field.writable?(%{type: :holding_register})
     refute Field.writable?(%{type: :input_register})
     refute Field.writable?(%{type: :discrete_input})
+  end
+
+  test "enforces field name uniqueness per device" do
+    device =
+      Repo.insert!(%Device{
+        name: "Test Device",
+        protocol: :tcp,
+        base_topic: "test-device",
+        active: true,
+        unit: 1,
+        transport_config: %{}
+      })
+
+    attrs = bitmap_attrs(%{name: "power"})
+
+    assert {:ok, _field} =
+             %Field{}
+             |> Field.changeset(attrs)
+             |> Ecto.Changeset.put_change(:device_id, device.id)
+             |> Repo.insert()
+
+    assert {:error, changeset} =
+             %Field{}
+             |> Field.changeset(Map.put(attrs, :address, 13001))
+             |> Ecto.Changeset.put_change(:device_id, device.id)
+             |> Repo.insert()
+
+    assert "has already been taken" in errors_on(changeset).name
   end
 
   describe "bitmap fields" do

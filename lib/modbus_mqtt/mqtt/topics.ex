@@ -10,6 +10,8 @@ defmodule ModbusMqtt.Mqtt.Topics do
   @detail_segment "detail"
   @set_segment "set"
   @last_error_segment "last_error"
+  @home_assistant_discovery_prefix "homeassistant"
+  @home_assistant_config_segment "config"
 
   def base_topic do
     Application.fetch_env!(:modbus_mqtt, :mqtt)
@@ -34,6 +36,25 @@ defmodule ModbusMqtt.Mqtt.Topics do
 
   def bridge_status_topic do
     join([base_topic(), @status_segment])
+  end
+
+  def home_assistant_discovery_prefix do
+    config = Application.fetch_env!(:modbus_mqtt, :mqtt)
+    config[:home_assistant_discovery_prefix] || @home_assistant_discovery_prefix
+  end
+
+  def home_assistant_status_topic do
+    join([home_assistant_discovery_prefix(), @status_segment])
+  end
+
+  def home_assistant_discovery_topic(component, object_id)
+      when is_binary(component) and is_binary(object_id) do
+    join([
+      home_assistant_discovery_prefix(),
+      component,
+      object_id,
+      @home_assistant_config_segment
+    ])
   end
 
   def device_value_topic(device, field) do

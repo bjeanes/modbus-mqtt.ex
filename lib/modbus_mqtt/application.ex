@@ -16,6 +16,7 @@ defmodule ModbusMqtt.Application do
       {Phoenix.PubSub, name: ModbusMqtt.PubSub},
       {Registry, keys: :unique, name: ModbusMqtt.Registry},
       ModbusMqtt.Mqtt.Status,
+      ModbusMqtt.Mqtt.HomeAssistant,
       ModbusMqtt.Mqtt.Supervisor,
       # ETS cache of raw Modbus register words
       ModbusMqtt.Engine.RegisterCache,

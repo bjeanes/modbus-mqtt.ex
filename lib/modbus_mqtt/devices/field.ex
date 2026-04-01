@@ -2,6 +2,8 @@ defmodule ModbusMqtt.Devices.Field do
   use Ecto.Schema
   import Ecto.Changeset
 
+  alias ModbusMqtt.Devices.Topic
+
   @enum_register_types [:holding_register, :input_register]
   @numeric_data_types [:int16, :uint16, :int32, :uint32, :float32]
   @unit_presets ["°C", "°F", "%", "V", "A", "W", "kWh", "Hz"]
@@ -66,12 +68,14 @@ defmodule ModbusMqtt.Devices.Field do
       :value_semantics,
       :enum_map
     ])
+    |> Topic.validate_segment(:name)
     |> normalize_unit()
     |> validate_enum_semantics()
     |> validate_bitmap_field()
     |> validate_string_length_field()
     |> validate_measurement_unit()
     |> fill_length()
+    |> unique_constraint(:name, name: :fields_device_id_name_index)
   end
 
   @doc "Returns common measurement unit presets for numeric fields"

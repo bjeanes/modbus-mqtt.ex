@@ -37,6 +37,25 @@ defmodule ModbusMqtt.Mqtt.TopicsTest do
     end
   end
 
+  describe "home_assistant_discovery_prefix/0" do
+    test "uses default discovery prefix" do
+      assert Topics.home_assistant_discovery_prefix() == "homeassistant"
+    end
+  end
+
+  describe "home_assistant_status_topic/0" do
+    test "builds home assistant status topic" do
+      assert Topics.home_assistant_status_topic() == "homeassistant/status"
+    end
+  end
+
+  describe "home_assistant_discovery_topic/2" do
+    test "builds discovery config topic" do
+      assert Topics.home_assistant_discovery_topic("sensor", "field_12") ==
+               "homeassistant/sensor/field_12/config"
+    end
+  end
+
   describe "device_value_topic/2" do
     test "uses device id when device base_topic is missing" do
       assert Topics.device_value_topic(device(%{id: 7}), field(%{name: "temperature"})) ==
