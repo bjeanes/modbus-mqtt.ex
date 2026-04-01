@@ -128,4 +128,16 @@ defmodule ModbusMqtt.Mqtt.TopicsTest do
                {:error, :not_set_topic}
     end
   end
+
+  describe "parse_set_topic/2" do
+    test "parses topic using injected base segments" do
+      assert Topics.parse_set_topic("custom/dev-1/mode/set", base_segments: ["custom"]) ==
+               {:ok, {"dev-1", "mode"}}
+    end
+
+    test "returns error when injected base segments do not match" do
+      assert Topics.parse_set_topic("modbus_mqtt/dev-1/mode/set", base_segments: ["custom"]) ==
+               {:error, :not_set_topic}
+    end
+  end
 end

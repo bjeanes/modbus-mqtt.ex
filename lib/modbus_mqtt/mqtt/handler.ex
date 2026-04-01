@@ -8,10 +8,17 @@ defmodule ModbusMqtt.Mqtt.Handler do
   alias ModbusMqtt.Mqtt.Topics
 
   def init(args) do
+    base_segments =
+      args
+      |> Keyword.get(:base_segments, Topics.base_topic())
+      |> to_string()
+      |> String.split("/", trim: true)
+
     {:ok,
      %{
        devices: Keyword.get(args, :devices, Devices),
-       writer: Keyword.get(args, :writer, WriteQueue)
+       writer: Keyword.get(args, :writer, WriteQueue),
+       base_segments: base_segments
      }}
   end
 
@@ -22,7 +29,8 @@ defmodule ModbusMqtt.Mqtt.Handler do
   end
 
   def handle_message(topic, payload, state) do
-    with {:ok, {device_topic, field_topic}} <- Topics.parse_set_topic(topic),
+    with {:ok, {device_topic, field_topic}} <-
+           Topics.parse_set_topic(topic, base_segments: state.base_segments),
          {device, field} <- state.devices.find_active_field_by_topic(device_topic, field_topic),
          {:ok, value} <- decode_payload(payload),
          :ok <- state.writer.write(device, field, value) do

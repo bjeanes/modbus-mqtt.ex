@@ -57,7 +57,11 @@ defmodule ModbusMqtt.Mqtt.Topics do
   matches the `<base>/<device>/<field>/set` pattern, or `{:error, :not_set_topic}` otherwise.
   """
   def parse_set_topic(topic) do
-    base_segments = String.split(base_topic(), "/", trim: true)
+    parse_set_topic(topic, base_segments: base_topic_segments())
+  end
+
+  def parse_set_topic(topic, opts) when is_list(opts) do
+    base_segments = Keyword.get(opts, :base_segments, base_topic_segments())
 
     with {:ok, incoming_segments} <- normalize_topic_segments(topic),
          {^base_segments, [device_topic, field_topic, @set_segment]} <-
@@ -83,4 +87,8 @@ defmodule ModbusMqtt.Mqtt.Topics do
   end
 
   defp normalize_topic_segments(_topic), do: {:error, :not_set_topic}
+
+  defp base_topic_segments do
+    String.split(base_topic(), "/", trim: true)
+  end
 end
