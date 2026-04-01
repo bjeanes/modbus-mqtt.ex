@@ -182,8 +182,8 @@ defmodule ModbusMqtt.Mqtt.HomeAssistant do
 
   defp field_component(field) do
     cond do
-      Field.writable?(field) and enum_field?(field) -> "select"
       Field.writable?(field) and bool_field?(field) -> "switch"
+      Field.writable?(field) and enum_field?(field) -> "select"
       Field.writable?(field) and numeric_field?(field) -> "number"
       bool_field?(field) -> "binary_sensor"
       true -> "sensor"
@@ -193,7 +193,8 @@ defmodule ModbusMqtt.Mqtt.HomeAssistant do
   defp bool_field?(field) do
     field.type in [:coil, :discrete_input] or
       field.data_type == :bool or
-      is_integer(field.bit_mask)
+      is_integer(field.bit_mask) or
+      Field.enum_boolean?(field)
   end
 
   defp numeric_field?(field) do

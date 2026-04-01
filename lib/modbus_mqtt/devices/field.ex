@@ -85,6 +85,27 @@ defmodule ModbusMqtt.Devices.Field do
   @doc "Returns true when this field can be written over Modbus"
   def writable?(%{type: type}), do: type in [:coil, :holding_register]
 
+  @doc "Returns true when an enum field has a strict two-entry boolean map."
+  def enum_boolean?(field) do
+    match?({:ok, _}, enum_boolean_codes(field))
+  end
+
+  @doc "Returns the mapped numeric codes for strict boolean enum fields."
+  @spec enum_boolean_codes(map()) ::
+          {:ok, %{true => non_neg_integer(), false => non_neg_integer()}} | :error
+  def enum_boolean_codes(%{value_semantics: :enum} = field) do
+    enum_map = Map.get(field, :enum_map) || %{}
+
+    with true <- is_map(enum_map),
+         {:ok, mapping} <- build_enum_boolean_codes(enum_map) do
+      {:ok, mapping}
+    else
+      _ -> :error
+    end
+  end
+
+  def enum_boolean_codes(_field), do: :error
+
   @doc """
   Parses enum map keys from decimal (`100`), hex (`0xAA`), or binary (`0b1010`).
   """
@@ -115,6 +136,20 @@ defmodule ModbusMqtt.Devices.Field do
   end
 
   def parse_enum_key(_value), do: {:error, :invalid_enum_key}
+
+  defp build_enum_boolean_codes(enum_map) do
+    with [{v1, b1}, {v2, b2}] <- Map.to_list(enum_map),
+         {:ok, v1} <- parse_enum_key(v1),
+         {:ok, v2} <- parse_enum_key(v2) do
+      case({b1, b2}) do
+        {true, false} -> {:ok, %{true => v1, false => v2}}
+        {false, true} -> {:ok, %{true => v2, false => v1}}
+        _ -> :error
+      end
+    else
+      _ -> :error
+    end
+  end
 
   defp validate_string_length_field(changeset) do
     case get_field(changeset, :data_type) do
@@ -272,6 +307,7 @@ defmodule ModbusMqtt.Devices.Field do
 
   defp validate_enum_map(field, _enum_map), do: [{field, "must be a map"}]
 
+  defp valid_enum_label?(label) when is_boolean(label), do: true
   defp valid_enum_label?(label) when is_binary(label), do: String.trim(label) != ""
   defp valid_enum_label?(_label), do: false
 

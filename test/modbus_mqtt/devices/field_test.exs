@@ -118,6 +118,36 @@ defmodule ModbusMqtt.Devices.FieldTest do
     refute Field.writable?(%{type: :discrete_input})
   end
 
+  test "detects boolean-like enum mappings" do
+    field = %{
+      value_semantics: :enum,
+      enum_map: %{"0x00" => true, "0x55" => false}
+    }
+
+    assert Field.enum_boolean?(field)
+    assert Field.enum_boolean_codes(field) == {:ok, %{true: 0, false: 0x55}}
+  end
+
+  test "does not detect non-boolean enum mappings as boolean-like" do
+    field = %{
+      value_semantics: :enum,
+      enum_map: %{"1" => "auto", "2" => "manual"}
+    }
+
+    refute Field.enum_boolean?(field)
+    assert Field.enum_boolean_codes(field) == :error
+  end
+
+  test "does not detect enum boolean when values are boolean-like strings" do
+    field = %{
+      value_semantics: :enum,
+      enum_map: %{"0x00" => "true", "0x55" => "false"}
+    }
+
+    refute Field.enum_boolean?(field)
+    assert Field.enum_boolean_codes(field) == :error
+  end
+
   test "enforces field name uniqueness per device" do
     device =
       Repo.insert!(%Device{

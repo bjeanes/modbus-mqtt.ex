@@ -196,6 +196,14 @@ defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
         enum_map: %{"0x01" => "auto", "0x02" => "manual"}
       })
 
+    enum_boolean_field =
+      field_fixture!(device, "smart_charge_enabled", %{
+        type: :holding_register,
+        data_type: :uint16,
+        value_semantics: :enum,
+        enum_map: %{"0x00" => true, "0x55" => false}
+      })
+
     numeric_field =
       field_fixture!(device, "setpoint", %{
         type: :holding_register,
@@ -224,6 +232,11 @@ defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
            )
 
     assert has_element?(view, "#write-field-#{enum_field.id} #write-value-#{enum_field.id}")
+
+    assert has_element?(
+             view,
+             "#write-field-#{enum_boolean_field.id} #write-value-#{enum_boolean_field.id}[type='checkbox']"
+           )
 
     assert has_element?(
              view,

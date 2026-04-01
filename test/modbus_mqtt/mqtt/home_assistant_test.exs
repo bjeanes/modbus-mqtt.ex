@@ -41,6 +41,16 @@ defmodule ModbusMqtt.Mqtt.HomeAssistantTest do
               unit: nil
             },
             %{
+              id: 15,
+              name: "smart_charge_enabled",
+              type: :holding_register,
+              data_type: :uint16,
+              value_semantics: :enum,
+              enum_map: %{"0x00" => true, "0x55" => false},
+              bit_mask: nil,
+              unit: nil
+            },
+            %{
               id: 14,
               name: "power_limit",
               type: :holding_register,
@@ -80,12 +90,17 @@ defmodule ModbusMqtt.Mqtt.HomeAssistantTest do
     assert_receive {:published, "homeassistant/select/modbus_mqtt_inverter_mode/config",
                     payload_13, []}
 
+    assert_receive {:published,
+                    "homeassistant/switch/modbus_mqtt_inverter_smart_charge_enabled/config",
+                    payload_15, []}
+
     assert_receive {:published, "homeassistant/number/modbus_mqtt_inverter_power_limit/config",
                     payload_14, []}
 
     config_11 = Jason.decode!(payload_11)
     config_12 = Jason.decode!(payload_12)
     config_13 = Jason.decode!(payload_13)
+    config_15 = Jason.decode!(payload_15)
     config_14 = Jason.decode!(payload_14)
 
     assert config_11["state_topic"] == "modbus_mqtt/inverter/temperature/detail"
@@ -108,6 +123,9 @@ defmodule ModbusMqtt.Mqtt.HomeAssistantTest do
     assert config_13["command_topic"] == "modbus_mqtt/inverter/mode/set"
     assert Enum.sort(config_13["options"]) == ["auto", "manual"]
 
+    assert config_15["command_topic"] == "modbus_mqtt/inverter/smart_charge_enabled/set"
+    assert config_15["value_template"] == "{{ 'ON' if value_json.value else 'OFF' }}"
+
     assert config_14["command_topic"] == "modbus_mqtt/inverter/power_limit/set"
     assert config_14["mode"] == "box"
   end
@@ -128,13 +146,13 @@ defmodule ModbusMqtt.Mqtt.HomeAssistantTest do
 
     HomeAssistant.mqtt_connection_changed(server, :up)
 
-    for _ <- 1..4 do
+    for _ <- 1..5 do
       assert_receive {:published, _, _, []}
     end
 
     HomeAssistant.home_assistant_online(server)
 
-    for _ <- 1..4 do
+    for _ <- 1..5 do
       assert_receive {:published, _, _, []}
     end
   end

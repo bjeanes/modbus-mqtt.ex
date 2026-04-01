@@ -284,6 +284,58 @@ fields = [
       "0xCC" => "stop"
     }
   },
+  %{
+    address: 13087,
+    data_type: :uint16,
+    type: :holding_register,
+    name: "export_limitation_enabled",
+    value_semantics: :enum,
+    enum_map: %{
+      "0xAA" => true,
+      "0x55" => false
+    }
+  },
+  %{
+    address: 31222,
+    data_type: :uint16,
+    type: :holding_register,
+    name: "export_limitation_value",
+    unit: "W",
+    scale: -1
+  },
+  %{
+    address: 13089,
+    data_type: :uint16,
+    type: :holding_register,
+    name: "active_power_limitation_enabled",
+    value_semantics: :enum,
+    enum_map: %{
+      "0xAA" => true,
+      "0x55" => false
+    }
+  },
+  %{
+    address: 33208,
+    data_type: :uint16,
+    type: :holding_register,
+    name: "scheduled_charging_enabled",
+    value_semantics: :enum,
+    enum_map: %{
+      "0xAA" => true,
+      "0x55" => false
+    }
+  },
+  %{
+    address: 33209,
+    data_type: :uint16,
+    type: :holding_register,
+    name: "scheduled_charging_valid",
+    value_semantics: :enum,
+    enum_map: %{
+      "0" => "weekdays",
+      "1" => "every day"
+    }
+  },
   %{address: 13036, data_type: :uint16, name: "daily_import_energy", scale: -1, unit: "kWh"},
   %{
     address: 13037,

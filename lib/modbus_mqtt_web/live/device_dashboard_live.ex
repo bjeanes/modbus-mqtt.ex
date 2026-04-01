@@ -821,15 +821,17 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
 
   defp write_input_kind(field) do
     cond do
-      field.value_semantics == :enum -> :enum
       boolean_write_field?(field) -> :boolean
+      field.value_semantics == :enum -> :enum
       numeric_write_field?(field) -> :number
       true -> :unsupported
     end
   end
 
   defp boolean_write_field?(field) do
-    field.type == :coil or (field.data_type == :bool and is_nil(field.bit_mask))
+    field.type == :coil or
+      (field.data_type == :bool and is_nil(field.bit_mask)) or
+      Field.enum_boolean?(field)
   end
 
   defp numeric_write_field?(field) do

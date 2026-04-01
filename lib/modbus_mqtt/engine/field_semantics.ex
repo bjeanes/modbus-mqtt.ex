@@ -6,7 +6,13 @@ defmodule ModbusMqtt.Engine.FieldSemantics do
   alias ModbusMqtt.Devices.Field
 
   def to_value(decoded, %{value_semantics: :enum} = field) do
-    enum_value(decoded, field)
+    case Field.enum_boolean_codes(field) do
+      {:ok, %{true: true_code, false: false_code}} ->
+        enum_boolean_value(decoded, true_code, false_code, field)
+
+      :error ->
+        enum_value(decoded, field)
+    end
   end
 
   def to_value(decoded, _field), do: decoded
@@ -39,6 +45,41 @@ defmodule ModbusMqtt.Engine.FieldSemantics do
   end
 
   def from_value(value, %{value_semantics: :enum} = field) do
+    case Field.enum_boolean_codes(field) do
+      {:ok, codes} ->
+        enum_boolean_from_value(value, codes, field)
+
+      :error ->
+        from_enum_value(value, field)
+    end
+  end
+
+  def from_value(value, _field), do: {:ok, value}
+
+  defp enum_value(decoded, field) when is_integer(decoded) do
+    normalized_enum_map(field)
+    |> Map.get(decoded, Integer.to_string(decoded))
+  end
+
+  defp enum_value(decoded, _field), do: to_string(decoded)
+
+  defp enum_boolean_value(decoded, true_code, _false_code, _field) when decoded == true_code,
+    do: true
+
+  defp enum_boolean_value(decoded, _true_code, false_code, _field) when decoded == false_code,
+    do: false
+
+  defp enum_boolean_value(decoded, _true_code, _false_code, field), do: enum_value(decoded, field)
+
+  defp enum_boolean_from_value(value, codes, field) do
+    case normalize_boolean_input(value) do
+      {:ok, true} -> {:ok, Map.fetch!(codes, true)}
+      {:ok, false} -> {:ok, Map.fetch!(codes, false)}
+      :error -> from_enum_value(value, field)
+    end
+  end
+
+  defp from_enum_value(value, field) do
     reverse_map =
       field
       |> normalized_enum_map()
@@ -61,14 +102,23 @@ defmodule ModbusMqtt.Engine.FieldSemantics do
     end
   end
 
-  def from_value(value, _field), do: {:ok, value}
+  defp normalize_boolean_input(value) when value in [true, 1], do: {:ok, true}
+  defp normalize_boolean_input(value) when value in [false, 0], do: {:ok, false}
 
-  defp enum_value(decoded, field) when is_integer(decoded) do
-    normalized_enum_map(field)
-    |> Map.get(decoded, Integer.to_string(decoded))
+  defp normalize_boolean_input(value) when is_binary(value) do
+    case String.trim(value) |> String.downcase() do
+      normalized when normalized in ["1", "true", "on", "enable", "enabled", "yes"] ->
+        {:ok, true}
+
+      normalized when normalized in ["0", "false", "off", "disable", "disabled", "no"] ->
+        {:ok, false}
+
+      _ ->
+        :error
+    end
   end
 
-  defp enum_value(decoded, _field), do: to_string(decoded)
+  defp normalize_boolean_input(_value), do: :error
 
   defp measurement_unit(%{unit: unit}) when is_binary(unit) do
     trimmed = String.trim(unit)

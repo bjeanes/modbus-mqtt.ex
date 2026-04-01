@@ -23,6 +23,22 @@ defmodule ModbusMqtt.Engine.FieldSemanticsTest do
     assert FieldSemantics.from_value("0b11", field) == {:ok, 3}
   end
 
+  test "maps boolean-like enum values to booleans" do
+    field = %{value_semantics: :enum, enum_map: %{"0x00" => true, "0x55" => false}}
+
+    assert FieldSemantics.to_value(0x00, field) == true
+    assert FieldSemantics.to_value(0x55, field) == false
+  end
+
+  test "maps boolean write values to boolean-like enum codes" do
+    field = %{value_semantics: :enum, enum_map: %{"0x00" => true, "0x55" => false}}
+
+    assert FieldSemantics.from_value(true, field) == {:ok, 0x00}
+    assert FieldSemantics.from_value("on", field) == {:ok, 0x00}
+    assert FieldSemantics.from_value(false, field) == {:ok, 0x55}
+    assert FieldSemantics.from_value("false", field) == {:ok, 0x55}
+  end
+
   test "formats Decimal and binary values" do
     assert FieldSemantics.format(D.new("12.3")) == "12.3"
     assert FieldSemantics.format("maintenance") == "maintenance"
