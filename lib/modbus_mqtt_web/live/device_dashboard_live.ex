@@ -534,6 +534,7 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
         <.field_sparkline
           :if={numeric_field?(@field, @reading)}
           field={@field}
+          reading={@reading}
           numeric_history={@numeric_history}
           now={@now}
         />

@@ -8,11 +8,19 @@ defmodule ModbusMqttWeb.DeviceDashboardSparklineComponents do
   @history_window_secs 5 * 60
 
   attr :field, :map, required: true
+  attr :reading, :map, default: nil
   attr :numeric_history, :map, required: true
   attr :now, :any, required: true
 
   def field_sparkline(assigns) do
-    series = sparkline_series_for(assigns.numeric_history, assigns.field.name, assigns.now)
+    series =
+      sparkline_series_for(
+        assigns.numeric_history,
+        assigns.field.name,
+        assigns.reading,
+        assigns.now
+      )
+
     assigns = assign(assigns, :series, series)
 
     ~H"""
@@ -52,10 +60,10 @@ defmodule ModbusMqttWeb.DeviceDashboardSparklineComponents do
     """
   end
 
-  defp sparkline_series_for(history, field_name, now) do
+  defp sparkline_series_for(history, field_name, reading, now) do
     case history |> Map.get(field_name, []) |> prune_points(now) |> Enum.reverse() do
       [] ->
-        nil
+        constant_series_from_reading(reading, now)
 
       points ->
         {default_points, real_points} =
@@ -78,6 +86,20 @@ defmodule ModbusMqttWeb.DeviceDashboardSparklineComponents do
         %{all_points: points, dashed_points: dashed_points, solid_points: solid_points}
     end
   end
+
+  defp constant_series_from_reading(%{value: value}, now) do
+    case numeric_value(value) do
+      nil ->
+        nil
+
+      numeric ->
+        start_ts = DateTime.add(now, -@history_window_secs, :second)
+        points = [{start_ts, numeric, :real}, {now, numeric, :real}]
+        %{all_points: points, dashed_points: [], solid_points: points}
+    end
+  end
+
+  defp constant_series_from_reading(_reading, _now), do: nil
 
   defp prune_points(points, now) do
     Enum.filter(points, fn {ts, _value, _kind} ->
@@ -120,4 +142,10 @@ defmodule ModbusMqttWeb.DeviceDashboardSparklineComponents do
   defp points_path([]), do: nil
   defp points_path([single]), do: "#{single} #{single}"
   defp points_path(points), do: Enum.join(points, " ")
+
+  defp numeric_value(%Decimal{coef: special}) when special in [:NaN, :inf], do: nil
+  defp numeric_value(%Decimal{} = value), do: Decimal.to_float(value)
+  defp numeric_value(value) when is_integer(value), do: value * 1.0
+  defp numeric_value(value) when is_float(value), do: value
+  defp numeric_value(_value), do: nil
 end

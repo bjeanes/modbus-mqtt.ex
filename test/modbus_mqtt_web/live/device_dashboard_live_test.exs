@@ -163,6 +163,26 @@ defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
     assert Enum.all?(y_coords, &(&1 == hd(y_coords)))
   end
 
+  test "renders solid horizontal sparkline when only stale current reading exists" do
+    now = DateTime.utc_now()
+
+    svg =
+      render_component(&ModbusMqttWeb.DeviceDashboardSparklineComponents.field_sparkline/1, %{
+        field: %{id: 99, name: "temperature"},
+        reading: %{value: 42},
+        numeric_history: %{},
+        now: now
+      })
+
+    assert String.contains?(svg, "id=\"sparkline-99\"")
+    refute String.contains?(svg, "stroke-dasharray=\"4 3\"")
+    assert count_occurrences(svg, "<polyline") == 1
+
+    y_coords = svg |> solid_polyline_points!() |> y_coords_from_points()
+    assert length(y_coords) >= 2
+    assert Enum.all?(y_coords, &(&1 == hd(y_coords)))
+  end
+
   test "supports alphabetical, recent, and frequency sort modes", %{conn: conn} do
     device = device_fixture!("Sorter")
     field_a = field_fixture!(device, "alpha")
@@ -377,6 +397,13 @@ defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
     case Regex.run(~r/<polyline[^>]*stroke-dasharray="4 3"[^>]*points="([^"]+)"/, svg) do
       [_, points] -> points
       _ -> flunk("expected dashed sparkline polyline")
+    end
+  end
+
+  defp solid_polyline_points!(svg) do
+    case Regex.run(~r/<polyline[^>]*points="([^"]+)"/, svg) do
+      [_, points] -> points
+      _ -> flunk("expected solid sparkline polyline")
     end
   end
 
