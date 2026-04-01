@@ -44,6 +44,21 @@ defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
     wait_for(fn -> has_flashing_row?(view, field.id) end)
   end
 
+  test "ignores field_value_changed messages without crashing", %{conn: conn} do
+    device = device_fixture!("Battery")
+    field = field_fixture!(device, "battery_power")
+
+    {:ok, view, _html} = live(conn, ~p"/devices/#{device.id}/dashboard")
+
+    Phoenix.PubSub.broadcast!(
+      ModbusMqtt.PubSub,
+      "device:#{device.id}",
+      {:field_value_changed, device.id, field.name, 4820}
+    )
+
+    assert render(view) =~ "battery_power"
+  end
+
   test "keeps field highlighted until the most recent flash timer expires", %{conn: conn} do
     device = device_fixture!("Inverter")
     field = field_fixture!(device, "power")

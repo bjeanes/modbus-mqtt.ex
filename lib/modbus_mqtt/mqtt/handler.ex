@@ -3,7 +3,7 @@ defmodule ModbusMqtt.Mqtt.Handler do
   require Logger
 
   alias ModbusMqtt.Devices
-  alias ModbusMqtt.Engine.FieldWriter
+  alias ModbusMqtt.Engine.WriteQueue
   alias ModbusMqtt.Mqtt.Status
   alias ModbusMqtt.Mqtt.Topics
 
@@ -11,7 +11,7 @@ defmodule ModbusMqtt.Mqtt.Handler do
     {:ok,
      %{
        devices: Keyword.get(args, :devices, Devices),
-       writer: Keyword.get(args, :writer, FieldWriter)
+       writer: Keyword.get(args, :writer, WriteQueue)
      }}
   end
 

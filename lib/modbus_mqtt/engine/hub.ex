@@ -143,5 +143,11 @@ defmodule ModbusMqtt.Engine.Hub do
       "device:#{device_id}",
       {:field_update, field_name, value}
     )
+
+    Phoenix.PubSub.broadcast!(
+      pubsub,
+      "device:#{device_id}",
+      {:field_value_changed, device_id, field_name, value}
+    )
   end
 end

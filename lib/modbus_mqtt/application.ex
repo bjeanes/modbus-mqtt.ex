@@ -21,6 +21,8 @@ defmodule ModbusMqtt.Application do
       ModbusMqtt.Engine.RegisterCache,
       # The state cache for filtering deltas and live views
       ModbusMqtt.Engine.Hub,
+      # Retrying write coordinator shared by UI and MQTT /set requests
+      ModbusMqtt.Engine.WriteQueue,
       ModbusMqtt.Engine.Supervisor,
       # Keep running device trees reconciled with DB configuration
       ModbusMqtt.Engine.Reconciler,

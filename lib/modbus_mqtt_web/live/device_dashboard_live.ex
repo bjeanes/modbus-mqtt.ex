@@ -5,8 +5,8 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
   alias ModbusMqtt.Devices.Field
   alias ModbusMqttWeb.DeviceDashboard.FieldSorter
   alias ModbusMqtt.Engine.FieldSemantics
-  alias ModbusMqtt.Engine.FieldWriter
   alias ModbusMqtt.Engine.Hub
+  alias ModbusMqtt.Engine.WriteQueue
 
   @flash_ms 200
   @history_window_secs 5 * 60
@@ -39,7 +39,7 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
          field when not is_nil(field) <- Map.get(socket.assigns.fields_by_id, field_id),
          true <- Field.writable?(field),
          {:ok, value} <- extract_write_value(params),
-         :ok <- FieldWriter.write(socket.assigns.device, field, value) do
+         :ok <- WriteQueue.write(socket.assigns.device, field, value) do
       {:noreply, put_flash(socket, :info, "Queued write for #{field.name}")}
     else
       false ->
@@ -70,9 +70,21 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
       |> maybe_put_reading(field_name, reading)
       |> maybe_append_numeric_history(field_name, reading, now)
       |> track_field_update(field_name, now)
+      |> update(:write_statuses, &Map.delete(&1, field_name))
       |> put_flash_field(field_name)
 
     {:noreply, socket}
+  end
+
+  def handle_info({:field_write_status, field_name, status}, socket) do
+    {:noreply, update(socket, :write_statuses, &Map.put(&1, field_name, status))}
+  end
+
+  def handle_info({:field_value_changed, _device_id, field_name, _value}, socket) do
+    # Value-changed events are primarily consumed by WriteQueue to cancel stale retries.
+    # LiveView already updates readings via {:field_update, ...}, so we only clear pending
+    # write state here to avoid stale status badges and prevent clause errors.
+    {:noreply, update(socket, :write_statuses, &Map.delete(&1, field_name))}
   end
 
   def handle_info({:clear_flash_field, field_name, timer_ref}, socket) do
@@ -205,7 +217,7 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
                         now={@now}
                       />
                       <.field_update_cell reading={reading} now={@now} />
-                      <td id={"write-td-#{field.id}"} phx-update="ignore" class="min-w-[22rem]">
+                      <td id={"write-td-#{field.id}"} class="min-w-[22rem]">
                         <.form
                           for={%{}}
                           id={"write-field-#{field.id}"}
@@ -214,46 +226,50 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
                         >
                           <input type="hidden" name="field_id" value={field.id} />
 
-                          <%= case write_input_kind(field) do %>
-                            <% :boolean -> %>
-                              <div class="flex items-center gap-2">
-                                <.input
-                                  type="checkbox"
-                                  id={"write-value-#{field.id}"}
-                                  name="value"
-                                  checked={checkbox_checked?(reading)}
-                                  class="checkbox checkbox-sm"
-                                  label="Set"
-                                />
-                                <button type="submit" class="btn btn-xs btn-primary">Write</button>
-                              </div>
-                            <% :enum -> %>
-                              <div class="flex items-center gap-2">
-                                <.input
-                                  type="select"
-                                  id={"write-value-#{field.id}"}
-                                  name="value"
-                                  value={enum_selected_value(reading)}
-                                  options={enum_options(field)}
-                                  class="select select-sm w-48"
-                                />
-                                <button type="submit" class="btn btn-xs btn-primary">Write</button>
-                              </div>
-                            <% :number -> %>
-                              <div class="flex items-center gap-2">
-                                <.input
-                                  type="number"
-                                  id={"write-value-#{field.id}"}
-                                  name="value"
-                                  value={numeric_input_value(reading)}
-                                  step={numeric_step(field)}
-                                  class="input input-sm w-36"
-                                />
-                                <button type="submit" class="btn btn-xs btn-primary">Write</button>
-                              </div>
-                            <% :unsupported -> %>
-                              <span class="text-xs text-base-content/60">Unsupported</span>
-                          <% end %>
+                          <div id={"write-control-#{field.id}"} phx-update="ignore">
+                            <%= case write_input_kind(field) do %>
+                              <% :boolean -> %>
+                                <div class="flex items-center gap-2">
+                                  <.input
+                                    type="checkbox"
+                                    id={"write-value-#{field.id}"}
+                                    name="value"
+                                    checked={checkbox_checked?(reading)}
+                                    class="checkbox checkbox-sm"
+                                    label="Set"
+                                  />
+                                  <button type="submit" class="btn btn-xs btn-primary">Write</button>
+                                </div>
+                              <% :enum -> %>
+                                <div class="flex items-center gap-2">
+                                  <.input
+                                    type="select"
+                                    id={"write-value-#{field.id}"}
+                                    name="value"
+                                    value={enum_selected_value(reading)}
+                                    options={enum_options(field)}
+                                    class="select select-sm w-48"
+                                  />
+                                  <button type="submit" class="btn btn-xs btn-primary">Write</button>
+                                </div>
+                              <% :number -> %>
+                                <div class="flex items-center gap-2">
+                                  <.input
+                                    type="number"
+                                    id={"write-value-#{field.id}"}
+                                    name="value"
+                                    value={numeric_input_value(reading)}
+                                    step={numeric_step(field)}
+                                    class="input input-sm w-36"
+                                  />
+                                  <button type="submit" class="btn btn-xs btn-primary">Write</button>
+                                </div>
+                              <% :unsupported -> %>
+                                <span class="text-xs text-base-content/60">Unsupported</span>
+                            <% end %>
+                          </div>
+
+                          <.write_status field={field} status={Map.get(@write_statuses, field.name)} />
                         </.form>
                       </td>
                     </tr>
@@ -349,6 +365,7 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
          |> assign(:numeric_history, build_initial_numeric_history(fields, readings, now))
          |> assign(:flashed_fields, MapSet.new())
          |> assign(:flash_timers, %{})
+         |> assign(:write_statuses, %{})
          |> assign(:now, now)}
 
       _ ->
@@ -584,6 +601,33 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
         <div class="text-xs">Age: {age_label(@reading, @now)}</div>
       </div>
     </td>
+    """
+  end
+
+  attr :field, :map, required: true
+  attr :status, :map, default: nil
+
+  defp write_status(%{status: nil} = assigns) do
+    ~H"""
+    """
+  end
+
+  defp write_status(assigns) do
+    ~H"""
+    <p id={"write-status-#{@field.id}"} class="mt-1 text-xs text-base-content/70">
+      <%= case @status.state do %>
+        <% :pending -> %>
+          Pending write...
+        <% :retrying -> %>
+          Retrying (attempt {@status.attempt + 1})
+        <% :failed -> %>
+          Write failed: {inspect(@status.reason)}
+        <% :discarded -> %>
+          Pending write discarded
+        <% :written -> %>
+          Write accepted by device
+      <% end %>
+    </p>
     """
   end
 
