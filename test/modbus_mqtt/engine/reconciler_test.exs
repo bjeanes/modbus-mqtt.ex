@@ -100,7 +100,6 @@ defmodule ModbusMqtt.Engine.ReconcilerTest do
           address: 1,
           address_offset: 0,
           poll_interval_ms: 1000,
-          writable: false,
           scale: 0,
           swap_words: false,
           swap_bytes: false,

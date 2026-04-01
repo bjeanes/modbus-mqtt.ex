@@ -20,7 +20,6 @@ defmodule ModbusMqtt.Devices.Field do
     field :address, :integer
     field :address_offset, :integer, default: 0
     field :poll_interval_ms, :integer, default: 5000
-    field :writable, :boolean, default: false
     field :scale, :integer, default: 0
     field :swap_words, :boolean, default: false
     field :swap_bytes, :boolean, default: false
@@ -45,7 +44,6 @@ defmodule ModbusMqtt.Devices.Field do
       :address,
       :address_offset,
       :poll_interval_ms,
-      :writable,
       :scale,
       :swap_words,
       :swap_bytes,
@@ -62,7 +60,6 @@ defmodule ModbusMqtt.Devices.Field do
       :address,
       :address_offset,
       :poll_interval_ms,
-      :writable,
       :scale,
       :swap_words,
       :swap_bytes,
@@ -80,6 +77,9 @@ defmodule ModbusMqtt.Devices.Field do
   @doc "Returns common measurement unit presets for numeric fields"
   @spec unit_presets() :: [String.t()]
   def unit_presets, do: @unit_presets
+
+  @doc "Returns true when this field can be written over Modbus"
+  def writable?(%{type: type}), do: type in [:coil, :holding_register]
 
   @doc """
   Parses enum map keys from decimal (`100`), hex (`0xAA`), or binary (`0b1010`).

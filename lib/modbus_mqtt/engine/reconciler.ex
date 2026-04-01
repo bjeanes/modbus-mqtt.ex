@@ -218,7 +218,6 @@ defmodule ModbusMqtt.Engine.Reconciler do
       address: field.address,
       address_offset: field.address_offset,
       poll_interval_ms: field.poll_interval_ms,
-      writable: field.writable,
       scale: field.scale,
       swap_words: field.swap_words,
       swap_bytes: field.swap_bytes,

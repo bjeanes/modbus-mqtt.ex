@@ -244,7 +244,6 @@ for field_attrs <- fields do
     field_attrs
     |> Map.put_new(:type, :input_register)
     |> Map.put_new(:address_offset, -1)
-    |> Map.put_new(:writable, Map.get(field_attrs, :type) == :holding_register)
 
   {:ok, _} = Devices.create_field(device.id, attrs)
 end

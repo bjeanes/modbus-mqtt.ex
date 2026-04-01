@@ -109,6 +109,13 @@ defmodule ModbusMqtt.Devices.FieldTest do
     end
   end
 
+  test "determines writability from register type" do
+    assert Field.writable?(%{type: :coil})
+    assert Field.writable?(%{type: :holding_register})
+    refute Field.writable?(%{type: :input_register})
+    refute Field.writable?(%{type: :discrete_input})
+  end
+
   describe "bitmap fields" do
     test "accepts valid bitmap field" do
       changeset = Field.changeset(%Field{}, bitmap_attrs(%{bit_mask: 0x0001}))
@@ -151,7 +158,6 @@ defmodule ModbusMqtt.Devices.FieldTest do
       address: 13000,
       address_offset: 0,
       poll_interval_ms: 5000,
-      writable: false,
       scale: 0,
       swap_words: false,
       swap_bytes: false,
@@ -169,7 +175,6 @@ defmodule ModbusMqtt.Devices.FieldTest do
       address: 13030,
       address_offset: 0,
       poll_interval_ms: 1000,
-      writable: false,
       scale: 0,
       swap_words: false,
       swap_bytes: false,
