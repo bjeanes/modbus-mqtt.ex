@@ -11,8 +11,7 @@ defmodule ModbusMqtt.Mqtt.Handler do
     base_segments =
       args
       |> Keyword.get(:base_segments, Topics.base_topic())
-      |> to_string()
-      |> String.split("/", trim: true)
+      |> Topics.normalize_base_segments()
 
     {:ok,
      %{

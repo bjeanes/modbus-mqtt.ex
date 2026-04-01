@@ -18,6 +18,20 @@ defmodule ModbusMqtt.Mqtt.Topics do
     |> String.trim("/")
   end
 
+  def normalize_base_segments(base) when is_binary(base) do
+    String.split(base, "/", trim: true)
+  end
+
+  def normalize_base_segments(base_segments) when is_list(base_segments) do
+    if Enum.all?(base_segments, &is_binary/1) do
+      Enum.reject(base_segments, &(&1 == ""))
+    else
+      base_topic_segments()
+    end
+  end
+
+  def normalize_base_segments(_base), do: base_topic_segments()
+
   def bridge_status_topic do
     join([base_topic(), @status_segment])
   end
@@ -61,7 +75,10 @@ defmodule ModbusMqtt.Mqtt.Topics do
   end
 
   def parse_set_topic(topic, opts) when is_list(opts) do
-    base_segments = Keyword.get(opts, :base_segments, base_topic_segments())
+    base_segments =
+      opts
+      |> Keyword.get(:base_segments, base_topic())
+      |> normalize_base_segments()
 
     with {:ok, incoming_segments} <- normalize_topic_segments(topic),
          {^base_segments, [device_topic, field_topic, @set_segment]} <-
@@ -89,6 +106,7 @@ defmodule ModbusMqtt.Mqtt.Topics do
   defp normalize_topic_segments(_topic), do: {:error, :not_set_topic}
 
   defp base_topic_segments do
-    String.split(base_topic(), "/", trim: true)
+    base_topic()
+    |> normalize_base_segments()
   end
 end

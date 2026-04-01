@@ -52,4 +52,12 @@ defmodule ModbusMqtt.Mqtt.HandlerTest do
     assert {:ok, ^state} = Handler.handle_message("modbus_mqtt/dev-1/mode/set", "42", state)
     refute_receive {:write, _, _, _}
   end
+
+  test "accepts list base segments from init" do
+    {:ok, state} =
+      Handler.init(devices: FakeDevices, writer: FakeWriter, base_segments: ["custom"])
+
+    assert {:ok, ^state} = Handler.handle_message("custom/dev-1/mode/set", "42", state)
+    assert_receive {:write, %{name: "Device 1"}, %{name: "mode"}, 42}
+  end
 end

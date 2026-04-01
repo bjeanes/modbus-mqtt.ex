@@ -17,6 +17,20 @@ defmodule ModbusMqtt.Mqtt.TopicsTest do
     end
   end
 
+  describe "normalize_base_segments/1" do
+    test "splits binary base topics" do
+      assert Topics.normalize_base_segments("a/b/c") == ["a", "b", "c"]
+    end
+
+    test "drops empty segments from list input" do
+      assert Topics.normalize_base_segments(["a", "", "b"]) == ["a", "b"]
+    end
+
+    test "falls back to configured base when list is invalid" do
+      assert Topics.normalize_base_segments(["a", :bad]) == ["modbus_mqtt"]
+    end
+  end
+
   describe "bridge_status_topic/0" do
     test "builds bridge status topic" do
       assert Topics.bridge_status_topic() == "modbus_mqtt/status"
