@@ -167,6 +167,76 @@ defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
     assert_row_order(render(view), [field_a.id, field_b.id, field_c.id])
   end
 
+  test "renders type-appropriate write controls for writable fields", %{conn: conn} do
+    device = device_fixture!("Writer")
+
+    coil_field =
+      field_fixture!(device, "enabled", %{type: :coil, data_type: :bool, value_semantics: :raw})
+
+    enum_field =
+      field_fixture!(device, "mode", %{
+        type: :holding_register,
+        data_type: :uint16,
+        value_semantics: :enum,
+        enum_map: %{"0x01" => "auto", "0x02" => "manual"}
+      })
+
+    numeric_field =
+      field_fixture!(device, "setpoint", %{
+        type: :holding_register,
+        data_type: :uint16,
+        value_semantics: :raw,
+        scale: -2
+      })
+
+    readonly_field =
+      field_fixture!(device, "read_only", %{type: :input_register, data_type: :uint16})
+
+    {:ok, view, _html} = live(conn, ~p"/devices/#{device.id}/dashboard")
+
+    assert has_element?(view, "#writable-registers")
+    assert has_element?(view, "#readonly-registers")
+
+    assert has_element?(
+             view,
+             "#writable-register-table th.w-\\[22rem\\].min-w-\\[22rem\\]",
+             "Write"
+           )
+
+    assert has_element?(
+             view,
+             "#write-field-#{coil_field.id} #write-value-#{coil_field.id}[type='checkbox']"
+           )
+
+    assert has_element?(view, "#write-field-#{enum_field.id} #write-value-#{enum_field.id}")
+
+    assert has_element?(
+             view,
+             "#write-field-#{numeric_field.id} #write-value-#{numeric_field.id}[type='number'][step='0.01']"
+           )
+
+    refute has_element?(view, "#write-field-#{readonly_field.id}")
+    assert has_element?(view, "#readonly-register-table #field-#{readonly_field.id}")
+  end
+
+  test "renders 0 in numeric write input for NaN and infinite Decimal values", %{conn: conn} do
+    device = device_fixture!("NaN Device")
+
+    field =
+      field_fixture!(device, "setpoint", %{
+        type: :holding_register,
+        data_type: :uint16,
+        value_semantics: :raw
+      })
+
+    put_hub_reading!(device.id, field.name, %Decimal{sign: 1, coef: :NaN, exp: 0}, "NaN")
+    {:ok, view, _html} = live(conn, ~p"/devices/#{device.id}/dashboard")
+    assert has_element?(view, "#write-value-#{field.id}[value='0']")
+
+    emit_update(device.id, field.name, %Decimal{sign: 1, coef: :inf, exp: 0}, "Inf")
+    assert has_element?(view, "#write-value-#{field.id}[value='0']")
+  end
+
   defp device_fixture!(name) do
     %Device{}
     |> Device.changeset(%{

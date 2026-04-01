@@ -172,6 +172,14 @@ defmodule ModbusMqtt.Engine.Connection do
     call_device(device_id, {:read_input_registers, unit, address, count})
   end
 
+  def write_coil(device_id, unit, address, value) do
+    call_device(device_id, {:write_coil, unit, address, value})
+  end
+
+  def write_holding_registers(device_id, unit, address, values) do
+    call_device(device_id, {:write_holding_registers, unit, address, values})
+  end
+
   # Exponential backoff calculation with jitter
   defp calculate_backoff_delay(retry_count, base_delay_ms, max_delay_ms) when retry_count > 0 do
     # Exponential backoff: delay = min(base * 2^(retry_count-1), max_delay_ms)
@@ -224,21 +232,46 @@ defmodule ModbusMqtt.Engine.Connection do
     handle_client_read(state, client.read_input_registers(conn_pid, unit, address, count))
   end
 
-  defp handle_client_read(state, {:error, reason} = result) do
+  def handle_call(
+        {:write_coil, unit, address, value},
+        _from,
+        %{client: client, conn_pid: conn_pid} = state
+      ) do
+    handle_client_write(state, client.write_coil(conn_pid, unit, address, value))
+  end
+
+  def handle_call(
+        {:write_holding_registers, unit, address, values},
+        _from,
+        %{client: client, conn_pid: conn_pid} = state
+      ) do
+    handle_client_write(state, client.write_holding_registers(conn_pid, unit, address, values))
+  end
+
+  defp handle_client_read(state, result) do
+    handle_client_result(state, result, :read)
+  end
+
+  defp handle_client_write(state, result) do
+    handle_client_result(state, result, :write)
+  end
+
+  defp handle_client_result(state, {:error, reason} = result, operation) do
     if fatal_connection_error?(reason) do
       device = state.device
+      fatal_tag = String.to_atom("fatal_#{operation}_error")
 
       Logger.error(
-        "Modbus device #{device.id} (#{device.name}) detected fatal read error #{format_reason(reason)}; restarting device connection tree"
+        "Modbus device #{device.id} (#{device.name}) detected fatal #{operation} error #{format_reason(reason)}; restarting device connection tree"
       )
 
-      {:stop, {:fatal_read_error, reason}, result, state}
+      {:stop, {fatal_tag, reason}, result, state}
     else
       {:reply, result, state}
     end
   end
 
-  defp handle_client_read(state, result), do: {:reply, result, state}
+  defp handle_client_result(state, result, _operation), do: {:reply, result, state}
 
   @impl true
   def terminate(

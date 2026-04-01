@@ -2,6 +2,10 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
   use ModbusMqttWeb, :live_view
 
   alias ModbusMqtt.Devices
+  alias ModbusMqtt.Devices.Field
+  alias ModbusMqttWeb.DeviceDashboard.FieldSorter
+  alias ModbusMqtt.Engine.FieldSemantics
+  alias ModbusMqtt.Engine.FieldWriter
   alias ModbusMqtt.Engine.Hub
 
   @flash_ms 200
@@ -27,6 +31,32 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
   @impl true
   def handle_event("set_sort_mode", %{"mode" => mode}, socket) do
     {:noreply, assign(socket, :sort_mode, parse_sort_mode(mode))}
+  end
+
+  @impl true
+  def handle_event("write_field", %{"field_id" => raw_field_id} = params, socket) do
+    with {field_id, ""} <- Integer.parse(raw_field_id),
+         field when not is_nil(field) <- Map.get(socket.assigns.fields_by_id, field_id),
+         true <- Field.writable?(field),
+         {:ok, value} <- extract_write_value(params),
+         :ok <- FieldWriter.write(socket.assigns.device, field, value) do
+      {:noreply, put_flash(socket, :info, "Queued write for #{field.name}")}
+    else
+      false ->
+        {:noreply, put_flash(socket, :error, "Field is read-only")}
+
+      nil ->
+        {:noreply, put_flash(socket, :error, "Unknown field")}
+
+      :error ->
+        {:noreply, put_flash(socket, :error, "Invalid field id")}
+
+      {:error, :missing_value} ->
+        {:noreply, put_flash(socket, :error, "Write value is required")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Write failed: #{inspect(reason)}")}
+    end
   end
 
   @impl true
@@ -71,7 +101,7 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.app flash={@flash} current_scope={@current_scope} max_width_class="max-w-[1800px]">
       <section id="device-dashboard" class="space-y-6">
         <header class="space-y-3">
           <.link
@@ -134,74 +164,158 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
           </div>
         </header>
 
-        <div class="overflow-x-auto rounded-xl border border-base-300 bg-base-100">
-          <table id="register-table" class="table w-full text-sm">
-            <thead>
-              <tr>
-                <th>Register</th>
-                <th>Value</th>
-                <th>Age</th>
-                <th>Last update</th>
-              </tr>
-            </thead>
-            <tbody>
-              <%= for field <- sorted_fields(@fields, @sort_mode, @update_counts, @last_update_by_field) do %>
-                <% reading = Map.get(@readings, field.name) %>
-                <% flashing? = MapSet.member?(@flashed_fields, field.name) %>
-                <tr
-                  id={"field-#{field.id}"}
-                  data-flashing={to_string(flashing?)}
-                  class={[
-                    "transition-colors duration-700",
-                    flashing? && "bg-amber-100/70"
-                  ]}
-                >
-                  <td class="font-medium text-base-content">{field.name}</td>
-                  <td class="font-mono text-xs sm:text-sm">
-                    <div class="space-y-1">
-                      <div>{formatted_value(reading)}</div>
-                      <% series = sparkline_series_for(@numeric_history, field.name, @now) %>
-                      <%= if numeric_field?(field, reading) and not is_nil(series) do %>
-                        <% paths = sparkline_paths(series, 120, 28) %>
-                        <svg
-                          id={"sparkline-#{field.id}"}
-                          viewBox="0 0 120 28"
-                          class="h-7 w-[7.5rem] text-primary"
-                          role="img"
-                          aria-label={"Last 5 minutes trend for #{field.name}"}
+        <% {writable_fields, read_only_fields} =
+          FieldSorter.partitioned(
+            @fields,
+            @sort_mode,
+            @update_counts,
+            @last_update_by_field
+          ) %>
+
+        <div class="grid gap-4 xl:grid-cols-2">
+          <section id="writable-registers" class="space-y-2">
+            <h2 class="px-1 text-sm font-semibold uppercase tracking-wide text-base-content/70">
+              Writable
+            </h2>
+            <div class="overflow-x-auto rounded-xl border border-base-300 bg-base-100">
+              <table id="writable-register-table" class="table w-max min-w-full text-sm">
+                <thead>
+                  <tr>
+                    <th>Register</th>
+                    <th>Last update</th>
+                    <th class="w-[22rem] min-w-[22rem]">Write</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <%= for field <- writable_fields do %>
+                    <% reading = Map.get(@readings, field.name) %>
+                    <% flashing? = MapSet.member?(@flashed_fields, field.name) %>
+                    <tr
+                      id={"field-#{field.id}"}
+                      data-flashing={to_string(flashing?)}
+                      class={[
+                        "transition-colors duration-700",
+                        flashing? && "bg-amber-100/70"
+                      ]}
+                    >
+                      <.field_identity_cell
+                        field={field}
+                        reading={reading}
+                        numeric_history={@numeric_history}
+                        now={@now}
+                      />
+                      <.field_update_cell reading={reading} now={@now} />
+                      <td id={"write-td-#{field.id}"} phx-update="ignore" class="min-w-[22rem]">
+                        <.form
+                          for={%{}}
+                          id={"write-field-#{field.id}"}
+                          phx-submit="write_field"
+                          class="mb-0"
                         >
-                          <%= if paths.dashed do %>
-                            <polyline
-                              fill="none"
-                              stroke="currentColor"
-                              stroke-opacity="0.55"
-                              stroke-width="2"
-                              stroke-linecap="round"
-                              stroke-linejoin="round"
-                              stroke-dasharray="4 3"
-                              points={paths.dashed}
-                            />
+                          <input type="hidden" name="field_id" value={field.id} />
+
+                          <%= case write_input_kind(field) do %>
+                            <% :boolean -> %>
+                              <div class="flex items-center gap-2">
+                                <.input
+                                  type="checkbox"
+                                  id={"write-value-#{field.id}"}
+                                  name="value"
+                                  checked={checkbox_checked?(reading)}
+                                  class="checkbox checkbox-sm"
+                                  label="Set"
+                                />
+                                <button type="submit" class="btn btn-xs btn-primary">Write</button>
+                              </div>
+                            <% :enum -> %>
+                              <div class="flex items-center gap-2">
+                                <.input
+                                  type="select"
+                                  id={"write-value-#{field.id}"}
+                                  name="value"
+                                  value={enum_selected_value(reading)}
+                                  options={enum_options(field)}
+                                  class="select select-sm w-48"
+                                />
+                                <button type="submit" class="btn btn-xs btn-primary">Write</button>
+                              </div>
+                            <% :number -> %>
+                              <div class="flex items-center gap-2">
+                                <.input
+                                  type="number"
+                                  id={"write-value-#{field.id}"}
+                                  name="value"
+                                  value={numeric_input_value(reading)}
+                                  step={numeric_step(field)}
+                                  class="input input-sm w-36"
+                                />
+                                <button type="submit" class="btn btn-xs btn-primary">Write</button>
+                              </div>
+                            <% :unsupported -> %>
+                              <span class="text-xs text-base-content/60">Unsupported</span>
                           <% end %>
-                          <%= if paths.solid do %>
-                            <polyline
-                              fill="none"
-                              stroke="currentColor"
-                              stroke-width="2"
-                              stroke-linecap="round"
-                              stroke-linejoin="round"
-                              points={paths.solid}
-                            />
-                          <% end %>
-                        </svg>
-                      <% end %>
-                    </div>
-                  </td>
-                  <td class="text-base-content/70">{age_label(reading, @now)}</td>
-                  <td class="text-base-content/70">{last_update_label(reading)}</td>
-                </tr>
-              <% end %>
-            </tbody>
-          </table>
+                        </.form>
+                      </td>
+                    </tr>
+                  <% end %>
+
+                  <%= if writable_fields == [] do %>
+                    <tr>
+                      <td colspan="3" class="text-center text-sm text-base-content/60">
+                        No writable fields configured.
+                      </td>
+                    </tr>
+                  <% end %>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="readonly-registers" class="space-y-2">
+            <h2 class="px-1 text-sm font-semibold uppercase tracking-wide text-base-content/70">
+              Read-only
+            </h2>
+            <div class="overflow-x-auto rounded-xl border border-base-300 bg-base-100">
+              <table id="readonly-register-table" class="table w-full text-sm">
+                <thead>
+                  <tr>
+                    <th>Register</th>
+                    <th>Last update</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <%= for field <- read_only_fields do %>
+                    <% reading = Map.get(@readings, field.name) %>
+                    <% flashing? = MapSet.member?(@flashed_fields, field.name) %>
+                    <tr
+                      id={"field-#{field.id}"}
+                      data-flashing={to_string(flashing?)}
+                      class={[
+                        "transition-colors duration-700",
+                        flashing? && "bg-amber-100/70"
+                      ]}
+                    >
+                      <.field_identity_cell
+                        field={field}
+                        reading={reading}
+                        numeric_history={@numeric_history}
+                        now={@now}
+                      />
+                      <.field_update_cell reading={reading} now={@now} />
+                    </tr>
+                  <% end %>
+
+                  <%= if read_only_fields == [] do %>
+                    <tr>
+                      <td colspan="2" class="text-center text-sm text-base-content/60">
+                        No read-only fields configured.
+                      </td>
+                    </tr>
+                  <% end %>
+                </tbody>
+              </table>
+            </div>
+          </section>
         </div>
       </section>
     </Layouts.app>
@@ -227,6 +341,7 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
          socket
          |> assign(:device, device)
          |> assign(:fields, fields)
+         |> assign(:fields_by_id, Map.new(fields, &{&1.id, &1}))
          |> assign(:sort_mode, :alphabetical)
          |> assign(:update_counts, %{})
          |> assign(:last_update_by_field, %{})
@@ -379,6 +494,7 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
   defp points_path([single]), do: "#{single} #{single}"
   defp points_path(points), do: Enum.join(points, " ")
 
+  defp numeric_value(%Decimal{coef: special}) when special in [:NaN, :inf], do: nil
   defp numeric_value(%Decimal{} = value), do: Decimal.to_float(value)
   defp numeric_value(value) when is_integer(value), do: value * 1.0
   defp numeric_value(value) when is_float(value), do: value
@@ -390,66 +506,85 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
       is_nil(field.bit_mask)
   end
 
-  defp sorted_fields(fields, :alphabetical, _update_counts, _last_update_by_field), do: fields
+  attr :field, :map, required: true
+  attr :reading, :map, default: nil
+  attr :numeric_history, :map, required: true
+  attr :now, :any, required: true
 
-  defp sorted_fields(fields, :recent, _update_counts, last_update_by_field) do
-    sort_indexes = alphabetical_indexes(fields)
-
-    Enum.sort(fields, fn left, right ->
-      left_updated = recency_score(left.name, last_update_by_field)
-      right_updated = recency_score(right.name, last_update_by_field)
-
-      cond do
-        left_updated == right_updated ->
-          Map.fetch!(sort_indexes, left.name) <= Map.fetch!(sort_indexes, right.name)
-
-        true ->
-          left_updated > right_updated
-      end
-    end)
+  defp field_identity_cell(assigns) do
+    ~H"""
+    <td class="align-top">
+      <div class="space-y-1">
+        <div class="font-medium text-base-content">{@field.name}</div>
+        <div class="font-mono text-xs sm:text-sm">{formatted_value(@reading)}</div>
+        <.field_sparkline
+          :if={numeric_field?(@field, @reading)}
+          field={@field}
+          numeric_history={@numeric_history}
+          now={@now}
+        />
+      </div>
+    </td>
+    """
   end
 
-  defp sorted_fields(fields, :frequency, update_counts, last_update_by_field) do
-    sort_indexes = alphabetical_indexes(fields)
+  attr :field, :map, required: true
+  attr :numeric_history, :map, required: true
+  attr :now, :any, required: true
 
-    Enum.sort(fields, fn left, right ->
-      left_count = Map.get(update_counts, left.name, 0)
-      right_count = Map.get(update_counts, right.name, 0)
+  defp field_sparkline(assigns) do
+    series = sparkline_series_for(assigns.numeric_history, assigns.field.name, assigns.now)
+    assigns = assign(assigns, :series, series)
 
-      cond do
-        left_count == right_count ->
-          left_updated = recency_score(left.name, last_update_by_field)
-          right_updated = recency_score(right.name, last_update_by_field)
-
-          cond do
-            left_updated == right_updated ->
-              Map.fetch!(sort_indexes, left.name) <= Map.fetch!(sort_indexes, right.name)
-
-            true ->
-              left_updated > right_updated
-          end
-
-        true ->
-          left_count > right_count
-      end
-    end)
+    ~H"""
+    <%= if not is_nil(@series) do %>
+      <% paths = sparkline_paths(@series, 120, 28) %>
+      <svg
+        id={"sparkline-#{@field.id}"}
+        viewBox="0 0 120 28"
+        class="h-7 w-[7.5rem] text-primary"
+        role="img"
+        aria-label={"Last 5 minutes trend for #{@field.name}"}
+      >
+        <%= if paths.dashed do %>
+          <polyline
+            fill="none"
+            stroke="currentColor"
+            stroke-opacity="0.55"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-dasharray="4 3"
+            points={paths.dashed}
+          />
+        <% end %>
+        <%= if paths.solid do %>
+          <polyline
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            points={paths.solid}
+          />
+        <% end %>
+      </svg>
+    <% end %>
+    """
   end
 
-  defp sorted_fields(fields, _unknown_mode, update_counts, last_update_by_field) do
-    sorted_fields(fields, :alphabetical, update_counts, last_update_by_field)
-  end
+  attr :reading, :map, default: nil
+  attr :now, :any, required: true
 
-  defp alphabetical_indexes(fields) do
-    fields
-    |> Enum.with_index()
-    |> Map.new(fn {field, idx} -> {field.name, idx} end)
-  end
-
-  defp recency_score(field_name, last_update_by_field) do
-    case Map.get(last_update_by_field, field_name) do
-      %DateTime{} = datetime -> DateTime.to_unix(datetime, :microsecond)
-      _ -> 0
-    end
+  defp field_update_cell(assigns) do
+    ~H"""
+    <td class="align-top text-base-content/70">
+      <div class="space-y-1">
+        <div>{last_update_label(@reading)}</div>
+        <div class="text-xs">Age: {age_label(@reading, @now)}</div>
+      </div>
+    </td>
+    """
   end
 
   defp parse_sort_mode("alphabetical"), do: :alphabetical
@@ -519,4 +654,67 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
   defp format_timestamp(datetime) do
     Calendar.strftime(datetime, "%Y-%m-%d %H:%M:%S UTC")
   end
+
+  defp extract_write_value(%{"value" => value}) when is_binary(value) do
+    trimmed = String.trim(value)
+
+    if trimmed == "" do
+      {:error, :missing_value}
+    else
+      {:ok, trimmed}
+    end
+  end
+
+  defp extract_write_value(%{"value" => value}), do: {:ok, value}
+  defp extract_write_value(_params), do: {:error, :missing_value}
+
+  defp write_input_kind(field) do
+    cond do
+      field.value_semantics == :enum -> :enum
+      boolean_write_field?(field) -> :boolean
+      numeric_write_field?(field) -> :number
+      true -> :unsupported
+    end
+  end
+
+  defp boolean_write_field?(field) do
+    field.type == :coil or (field.data_type == :bool and is_nil(field.bit_mask))
+  end
+
+  defp numeric_write_field?(field) do
+    field.value_semantics == :raw and
+      field.data_type in [:int16, :uint16, :int32, :uint32, :float32] and
+      is_nil(field.bit_mask)
+  end
+
+  defp checkbox_checked?(%{value: value}) when value in [true, 1], do: true
+  defp checkbox_checked?(_reading), do: false
+
+  defp enum_options(field) do
+    field
+    |> FieldSemantics.normalized_enum_map()
+    |> Enum.sort_by(fn {code, _label} -> code end)
+    |> Enum.map(fn {_code, label} -> {label, label} end)
+  end
+
+  defp enum_selected_value(%{value: value}) when is_binary(value), do: value
+  defp enum_selected_value(_reading), do: nil
+
+  defp numeric_input_value(%{value: %Decimal{coef: special}}) when special in [:NaN, :inf],
+    do: "0"
+
+  defp numeric_input_value(%{value: %Decimal{} = value}), do: Decimal.to_string(value, :normal)
+  defp numeric_input_value(%{value: value}) when is_integer(value), do: Integer.to_string(value)
+  defp numeric_input_value(%{value: value}) when is_float(value), do: Float.to_string(value)
+  defp numeric_input_value(_reading), do: nil
+
+  defp numeric_step(%{scale: scale}) when is_integer(scale) and scale < 0 do
+    "0." <> String.duplicate("0", abs(scale) - 1) <> "1"
+  end
+
+  defp numeric_step(%{scale: scale}) when is_integer(scale) and scale > 0 do
+    Integer.to_string(Integer.pow(10, scale))
+  end
+
+  defp numeric_step(_field), do: "1"
 end

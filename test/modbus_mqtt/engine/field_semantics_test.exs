@@ -40,4 +40,17 @@ defmodule ModbusMqtt.Engine.FieldSemanticsTest do
 
     assert FieldSemantics.format("maintenance", field) == "maintenance"
   end
+
+  test "handles nil enum_map gracefully for to_value" do
+    field = %{value_semantics: :enum, enum_map: nil}
+
+    assert FieldSemantics.to_value(1, field) == "1"
+  end
+
+  test "handles nil enum_map gracefully for from_value" do
+    field = %{value_semantics: :enum, enum_map: nil}
+
+    assert FieldSemantics.from_value(1, field) == {:ok, 1}
+    assert FieldSemantics.from_value("1", field) == {:ok, 1}
+  end
 end

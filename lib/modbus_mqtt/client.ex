@@ -32,4 +32,18 @@ defmodule ModbusMqtt.Client do
               address :: integer(),
               count :: integer()
             ) :: {:ok, [integer()]} | error()
+
+  @callback write_coil(
+              connection(),
+              unit :: integer(),
+              address :: integer(),
+              value :: bit_value()
+            ) :: :ok | error()
+
+  @callback write_holding_registers(
+              connection(),
+              unit :: integer(),
+              address :: integer(),
+              values :: [integer()]
+            ) :: :ok | error()
 end

@@ -9,6 +9,7 @@ defmodule ModbusMqtt.Devices do
   alias ModbusMqtt.Repo
   alias ModbusMqtt.Devices.Device
   alias ModbusMqtt.Devices.Field
+  alias ModbusMqtt.Devices.Topic
 
   @doc "Lists all active devices with their fields preloaded"
   def list_active_devices_with_fields do
@@ -108,6 +109,20 @@ defmodule ModbusMqtt.Devices do
   @doc "Gets a field by ID without raising if not found"
   def get_field(id) do
     Repo.get(Field, id)
+  end
+
+  @doc "Finds an active field by MQTT topic segments"
+  def find_active_field_by_topic(device_topic, field_topic)
+      when is_binary(device_topic) and is_binary(field_topic) do
+    list_active_devices_with_fields()
+    |> Enum.find_value(fn device ->
+      if Topic.key(device) == device_topic do
+        case Enum.find(device.fields, &(&1.name == field_topic)) do
+          nil -> nil
+          field -> {device, field}
+        end
+      end
+    end)
   end
 
   defp maybe_reconcile_engine({:ok, _record} = result) do

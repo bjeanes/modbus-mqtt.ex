@@ -32,10 +32,22 @@ defmodule ModbusMqtt.Engine.ConnectionTest do
     def read_input_registers(pid, unit, address, count),
       do: read(pid, :read_input_registers, unit, address, count)
 
+    def write_coil(pid, unit, address, value),
+      do: write(pid, :write_coil, unit, address, [value])
+
+    def write_holding_registers(pid, unit, address, values),
+      do: write(pid, :write_holding_registers, unit, address, values)
+
     defp read(pid, kind, unit, address, count) do
       config = Agent.get(pid, & &1)
       send(config["test_pid"], {kind, unit, address, count})
       {:ok, config["read_values"] || [123]}
+    end
+
+    defp write(pid, kind, unit, address, values) do
+      config = Agent.get(pid, & &1)
+      send(config["test_pid"], {kind, unit, address, values})
+      :ok
     end
   end
 
@@ -53,6 +65,26 @@ defmodule ModbusMqtt.Engine.ConnectionTest do
     def read_discrete_inputs(_pid, _unit, _address, _count), do: {:error, :enotconn}
     def read_holding_registers(_pid, _unit, _address, _count), do: {:error, :enotconn}
     def read_input_registers(_pid, _unit, _address, _count), do: {:error, :enotconn}
+    def write_coil(_pid, _unit, _address, _value), do: :ok
+    def write_holding_registers(_pid, _unit, _address, _values), do: :ok
+  end
+
+  defmodule FakeClientWriteDisconnected do
+    @behaviour ModbusMqtt.Client
+
+    def open(config), do: Agent.start_link(fn -> config end)
+
+    def close(pid) do
+      Agent.stop(pid)
+      :ok
+    end
+
+    def read_coils(_pid, _unit, _address, _count), do: {:ok, []}
+    def read_discrete_inputs(_pid, _unit, _address, _count), do: {:ok, []}
+    def read_holding_registers(_pid, _unit, _address, _count), do: {:ok, [0]}
+    def read_input_registers(_pid, _unit, _address, _count), do: {:ok, [0]}
+    def write_coil(_pid, _unit, _address, _value), do: {:error, :enotconn}
+    def write_holding_registers(_pid, _unit, _address, _values), do: {:error, :enotconn}
   end
 
   defmodule FakeClientWithRetries do
@@ -86,6 +118,8 @@ defmodule ModbusMqtt.Engine.ConnectionTest do
     def read_coils(_pid, _unit, _address, _count), do: {:ok, []}
     def read_discrete_inputs(_pid, _unit, _address, _count), do: {:ok, []}
     def read_input_registers(_pid, _unit, _address, _count), do: {:ok, []}
+    def write_coil(_pid, _unit, _address, _value), do: :ok
+    def write_holding_registers(_pid, _unit, _address, _values), do: :ok
   end
 
   defmodule FakeClientAlwaysFails do
@@ -100,6 +134,8 @@ defmodule ModbusMqtt.Engine.ConnectionTest do
     def read_coils(_pid, _unit, _address, _count), do: {:ok, []}
     def read_discrete_inputs(_pid, _unit, _address, _count), do: {:ok, []}
     def read_input_registers(_pid, _unit, _address, _count), do: {:ok, []}
+    def write_coil(_pid, _unit, _address, _value), do: :ok
+    def write_holding_registers(_pid, _unit, _address, _values), do: :ok
   end
 
   test "returns an error when the connection process is absent" do
@@ -131,6 +167,12 @@ defmodule ModbusMqtt.Engine.ConnectionTest do
 
     assert Connection.read_holding_registers(device_id, 1, 40001, 1) == {:ok, [77]}
     assert_receive {:read_holding_registers, 1, 40001, 1}
+
+    assert Connection.write_coil(device_id, 1, 2, 1) == :ok
+    assert_receive {:write_coil, 1, 2, [1]}
+
+    assert Connection.write_holding_registers(device_id, 1, 500, [1, 2]) == :ok
+    assert_receive {:write_holding_registers, 1, 500, [1, 2]}
 
     GenServer.stop(pid)
     assert_receive {:client_close, ^device_id}
@@ -285,5 +327,42 @@ defmodule ModbusMqtt.Engine.ConnectionTest do
     assert Connection.read_holding_registers(device_id, 1, 0, 1) == {:error, :enotconn}
     assert_receive {:status, :disconnected, ^device_id, _reason}, 1000
     assert_receive {:EXIT, ^pid, {:fatal_read_error, :enotconn}}, 1000
+  end
+
+  test "stops connection on fatal enotconn write error" do
+    trap_exit? = Process.flag(:trap_exit, true)
+    on_exit(fn -> Process.flag(:trap_exit, trap_exit?) end)
+
+    device_id = System.unique_integer([:positive])
+
+    device = %{
+      id: device_id,
+      name: "Write-Disconnected Device",
+      protocol: :tcp,
+      unit: 1,
+      test_pid: self(),
+      transport_config: %{
+        "host" => "127.0.0.1",
+        "device_id" => device_id,
+        "test_pid" => self()
+      }
+    }
+
+    {:ok, pid} =
+      Connection.start_link(
+        {device,
+         [
+           client: FakeClientWriteDisconnected,
+           status: FakeStatus,
+           max_retries: 0
+         ]}
+      )
+
+    assert_receive {:status, :connecting, ^device_id}
+    assert_receive {:status, :connected, ^device_id}
+
+    assert Connection.write_holding_registers(device_id, 1, 0, [42]) == {:error, :enotconn}
+    assert_receive {:status, :disconnected, ^device_id, _reason}, 1000
+    assert_receive {:EXIT, ^pid, {:fatal_write_error, :enotconn}}, 1000
   end
 end

@@ -60,6 +60,23 @@ defmodule ModbusMqtt.Client.HexModbus do
     exec(pid, cmd)
   end
 
+  @impl true
+  def write_coil(pid, unit, address, value) when value in [0, 1] do
+    cmd = {:fc, unit, address, value}
+    exec(pid, cmd)
+  end
+
+  @impl true
+  def write_holding_registers(pid, unit, address, [single]) do
+    cmd = {:phr, unit, address, single}
+    exec(pid, cmd)
+  end
+
+  def write_holding_registers(pid, unit, address, values) when is_list(values) do
+    cmd = {:phr, unit, address, values}
+    exec(pid, cmd)
+  end
+
   defp exec(pid, cmd) do
     try do
       Modbus.Master.exec(pid, cmd)

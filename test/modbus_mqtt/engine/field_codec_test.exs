@@ -119,4 +119,36 @@ defmodule ModbusMqtt.Engine.FieldCodecTest do
       assert FieldCodec.decode([0x000F], field) == 15
     end
   end
+
+  describe "encode_write/2" do
+    test "encodes coil booleans" do
+      assert FieldCodec.encode_write(true, %{type: :coil}) == {:ok, [1]}
+      assert FieldCodec.encode_write("false", %{type: :coil}) == {:ok, [0]}
+    end
+
+    test "inverts scale for integer register writes" do
+      field = %{type: :holding_register, data_type: :uint16, scale: -1}
+
+      assert FieldCodec.encode_write(D.new("12.3"), field) == {:ok, [123]}
+    end
+
+    test "rejects out-of-range values" do
+      field = %{type: :holding_register, data_type: :uint16, scale: 0}
+
+      assert FieldCodec.encode_write(70_000, field) ==
+               {:error, {:out_of_range, 70_000, 0, 65_535}}
+    end
+
+    test "encodes uint32 with configured word and byte swap" do
+      field = %{
+        type: :holding_register,
+        data_type: :uint32,
+        scale: 0,
+        swap_words: true,
+        swap_bytes: true
+      }
+
+      assert FieldCodec.encode_write(0x11223344, field) == {:ok, [0x4433, 0x2211]}
+    end
+  end
 end

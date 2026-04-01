@@ -29,8 +29,7 @@ defmodule ModbusMqtt.Engine.FieldSemantics do
   end
 
   def normalized_enum_map(field) do
-    field
-    |> Map.get(:enum_map, %{})
+    (Map.get(field, :enum_map) || %{})
     |> Enum.reduce(%{}, fn {key, label}, acc ->
       case Field.parse_enum_key(key) do
         {:ok, code} -> Map.put(acc, code, label)
