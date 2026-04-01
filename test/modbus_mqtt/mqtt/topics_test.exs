@@ -119,6 +119,10 @@ defmodule ModbusMqtt.Mqtt.TopicsTest do
                {:ok, {"my-device", "my-field"}}
     end
 
+    test "returns error for integer list that is not a valid topic" do
+      assert Topics.parse_set_topic([1, 2, 3]) == {:error, :not_set_topic}
+    end
+
     test "returns error for invalid list topic levels" do
       assert Topics.parse_set_topic(["modbus_mqtt", :bad, "my-field", "set"]) ==
                {:error, :not_set_topic}
