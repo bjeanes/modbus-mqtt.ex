@@ -26,7 +26,7 @@ defmodule ModbusMqtt.Mqtt.Handler do
          {device, field} <- state.devices.find_active_field_by_topic(device_topic, field_topic),
          {:ok, value} <- decode_payload(payload),
          :ok <- state.writer.write(device, field, value) do
-      Logger.info("Applied MQTT write for #{device.name}:#{field.name} to #{inspect(value)}")
+      Logger.info("Queued MQTT write for #{device.name}:#{field.name} to #{inspect(value)}")
     else
       {:error, :not_set_topic} ->
         :ok
@@ -35,7 +35,7 @@ defmodule ModbusMqtt.Mqtt.Handler do
         Logger.warning("Ignoring MQTT write for unknown field topic #{inspect(topic)}")
 
       {:error, reason} ->
-        Logger.error("Failed MQTT write for #{inspect(topic)}: #{inspect(reason)}")
+        Logger.error("Failed to queue MQTT write for #{inspect(topic)}: #{inspect(reason)}")
     end
 
     {:ok, state}
