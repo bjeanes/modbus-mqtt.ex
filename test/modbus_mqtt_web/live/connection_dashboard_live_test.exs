@@ -1,42 +1,60 @@
-defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
+defmodule ModbusMqttWeb.ConnectionDashboardLiveTest do
   use ModbusMqttWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
 
   alias ModbusMqtt.Devices.Device
+  alias ModbusMqtt.Devices.Connection
   alias ModbusMqtt.Devices.Field
   alias ModbusMqtt.Repo
 
   test "renders registers alphabetically with formatted value and update metadata", %{conn: conn} do
-    device = device_fixture!("Boiler")
-    field_zeta = field_fixture!(device, "zeta")
-    field_alpha = field_fixture!(device, "alpha")
+    connection = connection_fixture!("Boiler")
+    field_zeta = field_fixture!(connection, "zeta")
+    field_alpha = field_fixture!(connection, "alpha")
 
-    put_hub_reading!(device.id, field_zeta.name, 42, "42.0 C")
+    put_hub_reading!(connection.id, field_zeta.name, 42, "42.0 C")
 
-    {:ok, view, _html} = live(conn, ~p"/devices/#{device.id}/dashboard")
+    {:ok, view, _html} = live(conn, ~p"/connections/#{connection.id}/dashboard")
 
     assert has_element?(view, "#field-#{field_alpha.id}", "alpha")
     assert has_element?(view, "#field-#{field_zeta.id}", "zeta")
     assert has_element?(view, "#field-#{field_zeta.id}", "42.0 C")
     assert has_element?(view, "#field-#{field_zeta.id}", "just now")
-    assert has_element?(view, "#device-dashboard", "UTC")
+    assert has_element?(view, "#connection-dashboard", "UTC")
 
     html = render(view)
     assert byte_index!(html, "alpha") < byte_index!(html, "zeta")
   end
 
-  test "flashes a row and updates formatted value when a field changes", %{conn: conn} do
-    device = device_fixture!("Chiller")
-    field = field_fixture!(device, "pressure")
+  test "renders and updates connection status", %{conn: conn} do
+    connection = connection_fixture!("Status Conn")
 
-    {:ok, view, _html} = live(conn, ~p"/devices/#{device.id}/dashboard")
+    {:ok, view, _html} = live(conn, ~p"/connections/#{connection.id}/dashboard")
 
-    put_hub_reading!(device.id, field.name, 1, "1 bar")
+    assert has_element?(view, "#connection-dashboard", "Status:")
+    assert has_element?(view, "#connection-dashboard", "unknown")
 
     Phoenix.PubSub.broadcast!(
       ModbusMqtt.PubSub,
-      "device:#{device.id}",
+      "device:#{connection.id}",
+      {:connection_status_changed, connection.id, "online"}
+    )
+
+    wait_for(fn -> has_element?(view, "#connection-dashboard", "online") end)
+  end
+
+  test "flashes a row and updates formatted value when a field changes", %{conn: conn} do
+    connection = connection_fixture!("Chiller")
+    field = field_fixture!(connection, "pressure")
+
+    {:ok, view, _html} = live(conn, ~p"/connections/#{connection.id}/dashboard")
+
+    put_hub_reading!(connection.id, field.name, 1, "1 bar")
+
+    Phoenix.PubSub.broadcast!(
+      ModbusMqtt.PubSub,
+      "device:#{connection.id}",
       {:field_update, field.name, 1}
     )
 
@@ -45,32 +63,32 @@ defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
   end
 
   test "ignores field_value_changed messages without crashing", %{conn: conn} do
-    device = device_fixture!("Battery")
-    field = field_fixture!(device, "battery_power")
+    connection = connection_fixture!("Battery")
+    field = field_fixture!(connection, "battery_power")
 
-    {:ok, view, _html} = live(conn, ~p"/devices/#{device.id}/dashboard")
+    {:ok, view, _html} = live(conn, ~p"/connections/#{connection.id}/dashboard")
 
     Phoenix.PubSub.broadcast!(
       ModbusMqtt.PubSub,
-      "device:#{device.id}",
-      {:field_value_changed, device.id, field.name, 4820}
+      "device:#{connection.id}",
+      {:field_value_changed, connection.id, field.name, 4820}
     )
 
     assert render(view) =~ "battery_power"
   end
 
   test "keeps field highlighted until the most recent flash timer expires", %{conn: conn} do
-    device = device_fixture!("Inverter")
-    field = field_fixture!(device, "power")
+    connection = connection_fixture!("Inverter")
+    field = field_fixture!(connection, "power")
 
-    {:ok, view, _html} = live(conn, ~p"/devices/#{device.id}/dashboard")
+    {:ok, view, _html} = live(conn, ~p"/connections/#{connection.id}/dashboard")
 
-    emit_update(device.id, field.name, 10, "10 W")
+    emit_update(connection.id, field.name, 10, "10 W")
     wait_for(fn -> has_flashing_row?(view, field.id) end)
 
     # Emit another update halfway through the first flash window.
     Process.sleep(100)
-    emit_update(device.id, field.name, 11, "11 W")
+    emit_update(connection.id, field.name, 11, "11 W")
 
     # Past the first timer, but still within the second timer.
     Process.sleep(130)
@@ -81,29 +99,29 @@ defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
   end
 
   test "renders sparkline for numeric values only", %{conn: conn} do
-    device = device_fixture!("Compressor")
-    numeric_field = field_fixture!(device, "amps")
+    connection = connection_fixture!("Compressor")
+    numeric_field = field_fixture!(connection, "amps")
 
     text_field =
-      field_fixture!(device, "status", %{
+      field_fixture!(connection, "status", %{
         value_semantics: :enum,
         enum_map: %{"0" => "off", "1" => "on"}
       })
 
     bitmap_field =
-      field_fixture!(device, "enabled", %{
+      field_fixture!(connection, "enabled", %{
         bit_mask: 1,
         data_type: :uint16,
         type: :holding_register
       })
 
-    {:ok, view, _html} = live(conn, ~p"/devices/#{device.id}/dashboard")
+    {:ok, view, _html} = live(conn, ~p"/connections/#{connection.id}/dashboard")
 
-    put_hub_reading!(device.id, numeric_field.name, 10, "10 A")
+    put_hub_reading!(connection.id, numeric_field.name, 10, "10 A")
 
     Phoenix.PubSub.broadcast!(
       ModbusMqtt.PubSub,
-      "device:#{device.id}",
+      "device:#{connection.id}",
       {:field_update, numeric_field.name, 10}
     )
 
@@ -113,19 +131,19 @@ defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
     assert String.contains?(numeric_svg, "stroke-dasharray=\"4 3\"")
     assert count_occurrences(numeric_svg, "<polyline") == 2
 
-    put_hub_reading!(device.id, text_field.name, "ok", "ok")
+    put_hub_reading!(connection.id, text_field.name, "ok", "ok")
 
     Phoenix.PubSub.broadcast!(
       ModbusMqtt.PubSub,
-      "device:#{device.id}",
+      "device:#{connection.id}",
       {:field_update, text_field.name, "ok"}
     )
 
-    put_hub_reading!(device.id, bitmap_field.name, 1, "true")
+    put_hub_reading!(connection.id, bitmap_field.name, 1, "true")
 
     Phoenix.PubSub.broadcast!(
       ModbusMqtt.PubSub,
-      "device:#{device.id}",
+      "device:#{connection.id}",
       {:field_update, bitmap_field.name, 1}
     )
 
@@ -134,10 +152,10 @@ defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
   end
 
   test "renders default zero sparkline for numeric fields on initial load", %{conn: conn} do
-    device = device_fixture!("Pump")
-    field = field_fixture!(device, "flow")
+    connection = connection_fixture!("Pump")
+    field = field_fixture!(connection, "flow")
 
-    {:ok, view, _html} = live(conn, ~p"/devices/#{device.id}/dashboard")
+    {:ok, view, _html} = live(conn, ~p"/connections/#{connection.id}/dashboard")
 
     assert has_element?(view, "#sparkline-#{field.id}")
 
@@ -147,12 +165,12 @@ defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
   end
 
   test "backfills dashed sparkline history to the first real value", %{conn: conn} do
-    device = device_fixture!("Backfill")
-    field = field_fixture!(device, "temperature")
+    connection = connection_fixture!("Backfill")
+    field = field_fixture!(connection, "temperature")
 
-    {:ok, view, _html} = live(conn, ~p"/devices/#{device.id}/dashboard")
+    {:ok, view, _html} = live(conn, ~p"/connections/#{connection.id}/dashboard")
 
-    emit_update(device.id, field.name, 37, "37")
+    emit_update(connection.id, field.name, 37, "37")
 
     wait_for(fn -> has_element?(view, "#sparkline-#{field.id}") end)
 
@@ -184,12 +202,12 @@ defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
   end
 
   test "supports alphabetical, recent, and frequency sort modes", %{conn: conn} do
-    device = device_fixture!("Sorter")
-    field_a = field_fixture!(device, "alpha")
-    field_b = field_fixture!(device, "beta")
-    field_c = field_fixture!(device, "gamma")
+    connection = connection_fixture!("Sorter")
+    field_a = field_fixture!(connection, "alpha")
+    field_b = field_fixture!(connection, "beta")
+    field_c = field_fixture!(connection, "gamma")
 
-    {:ok, view, _html} = live(conn, ~p"/devices/#{device.id}/dashboard")
+    {:ok, view, _html} = live(conn, ~p"/connections/#{connection.id}/dashboard")
 
     assert has_element?(
              view,
@@ -198,13 +216,13 @@ defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
 
     assert_row_order(render(view), [field_a.id, field_b.id, field_c.id])
 
-    emit_update(device.id, field_a.name, 1, "1")
+    emit_update(connection.id, field_a.name, 1, "1")
     Process.sleep(5)
-    emit_update(device.id, field_b.name, 2, "2")
+    emit_update(connection.id, field_b.name, 2, "2")
     Process.sleep(5)
-    emit_update(device.id, field_c.name, 3, "3")
+    emit_update(connection.id, field_c.name, 3, "3")
     Process.sleep(5)
-    emit_update(device.id, field_c.name, 4, "4")
+    emit_update(connection.id, field_c.name, 4, "4")
 
     render_click(element(view, "#sort-mode-recent"))
     assert has_element?(view, "#sort-mode-toggle[data-sort-mode='recent']")
@@ -220,13 +238,17 @@ defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
   end
 
   test "renders type-appropriate write controls for writable fields", %{conn: conn} do
-    device = device_fixture!("Writer")
+    connection = connection_fixture!("Writer")
 
     coil_field =
-      field_fixture!(device, "enabled", %{type: :coil, data_type: :bool, value_semantics: :raw})
+      field_fixture!(connection, "enabled", %{
+        type: :coil,
+        data_type: :bool,
+        value_semantics: :raw
+      })
 
     enum_field =
-      field_fixture!(device, "mode", %{
+      field_fixture!(connection, "mode", %{
         type: :holding_register,
         data_type: :uint16,
         value_semantics: :enum,
@@ -234,7 +256,7 @@ defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
       })
 
     enum_boolean_field =
-      field_fixture!(device, "smart_charge_enabled", %{
+      field_fixture!(connection, "smart_charge_enabled", %{
         type: :holding_register,
         data_type: :uint16,
         value_semantics: :enum,
@@ -242,7 +264,7 @@ defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
       })
 
     numeric_field =
-      field_fixture!(device, "setpoint", %{
+      field_fixture!(connection, "setpoint", %{
         type: :holding_register,
         data_type: :uint16,
         value_semantics: :raw,
@@ -250,9 +272,9 @@ defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
       })
 
     readonly_field =
-      field_fixture!(device, "read_only", %{type: :input_register, data_type: :uint16})
+      field_fixture!(connection, "read_only", %{type: :input_register, data_type: :uint16})
 
-    {:ok, view, _html} = live(conn, ~p"/devices/#{device.id}/dashboard")
+    {:ok, view, _html} = live(conn, ~p"/connections/#{connection.id}/dashboard")
 
     assert has_element?(view, "#writable-registers")
     assert has_element?(view, "#readonly-registers")
@@ -285,18 +307,18 @@ defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
   end
 
   test "shows Write only for staged changes and clears when update matches", %{conn: conn} do
-    device = device_fixture!("Staging")
+    connection = connection_fixture!("Staging")
 
     numeric_field =
-      field_fixture!(device, "setpoint", %{
+      field_fixture!(connection, "setpoint", %{
         type: :holding_register,
         data_type: :uint16,
         value_semantics: :raw
       })
 
-    put_hub_reading!(device.id, numeric_field.name, 20, "20")
+    put_hub_reading!(connection.id, numeric_field.name, 20, "20")
 
-    {:ok, view, _html} = live(conn, ~p"/devices/#{device.id}/dashboard")
+    {:ok, view, _html} = live(conn, ~p"/connections/#{connection.id}/dashboard")
 
     refute has_element?(view, "#write-field-#{numeric_field.id} button", "Write")
 
@@ -307,56 +329,69 @@ defmodule ModbusMqttWeb.DeviceDashboardLiveTest do
 
     assert has_element?(view, "#write-field-#{numeric_field.id} button", "Write")
 
-    emit_update(device.id, numeric_field.name, 22, "22")
+    emit_update(connection.id, numeric_field.name, 22, "22")
 
     wait_for(fn -> not has_element?(view, "#write-field-#{numeric_field.id} button", "Write") end)
   end
 
   test "renders 0 in numeric write input for NaN and infinite Decimal values", %{conn: conn} do
-    device = device_fixture!("NaN Device")
+    connection = connection_fixture!("NaN Device")
 
     field =
-      field_fixture!(device, "setpoint", %{
+      field_fixture!(connection, "setpoint", %{
         type: :holding_register,
         data_type: :uint16,
         value_semantics: :raw
       })
 
-    put_hub_reading!(device.id, field.name, %Decimal{sign: 1, coef: :NaN, exp: 0}, "NaN")
-    {:ok, view, _html} = live(conn, ~p"/devices/#{device.id}/dashboard")
+    put_hub_reading!(connection.id, field.name, %Decimal{sign: 1, coef: :NaN, exp: 0}, "NaN")
+    {:ok, view, _html} = live(conn, ~p"/connections/#{connection.id}/dashboard")
     assert has_element?(view, "#write-value-#{field.id}[value='0']")
 
-    emit_update(device.id, field.name, %Decimal{sign: 1, coef: :inf, exp: 0}, "Inf")
+    emit_update(connection.id, field.name, %Decimal{sign: 1, coef: :inf, exp: 0}, "Inf")
     assert has_element?(view, "#write-value-#{field.id}[value='0']")
   end
 
-  defp device_fixture!(name) do
-    %Device{}
-    |> Device.changeset(%{
-      name: name,
-      base_topic: name |> String.downcase() |> String.replace(" ", "-")
+  defp connection_fixture!(name) do
+    device =
+      %Device{}
+      |> Device.changeset(%{name: name})
+      |> Repo.insert!()
+
+    %Connection{}
+    |> Connection.changeset(%{
+      protocol: :tcp,
+      base_topic: name |> String.downcase() |> String.replace(" ", "-"),
+      active: true,
+      unit: 1,
+      transport_config: %{}
     })
-    |> Repo.insert!()
-  end
-
-  defp field_fixture!(device, name, attrs \\ %{}) do
-    %Field{}
-    |> Field.changeset(Map.merge(%{name: name, address: 10}, attrs))
     |> Ecto.Changeset.put_change(:device_id, device.id)
     |> Repo.insert!()
   end
 
-  defp put_hub_reading!(device_id, field_name, value, formatted) do
-    reading = %{bytes: [0, 1], decoded: value, value: value, formatted: formatted}
-    :ets.insert(:modbus_mqtt_hub_cache, {{device_id, field_name}, reading, DateTime.utc_now()})
+  defp field_fixture!(connection, name, attrs \\ %{}) do
+    %Field{}
+    |> Field.changeset(Map.merge(%{name: name, address: 10}, attrs))
+    |> Ecto.Changeset.put_change(:device_id, connection.device_id)
+    |> Repo.insert!()
   end
 
-  defp emit_update(device_id, field_name, value, formatted) do
-    put_hub_reading!(device_id, field_name, value, formatted)
+  defp put_hub_reading!(connection_id, field_name, value, formatted) do
+    reading = %{bytes: [0, 1], decoded: value, value: value, formatted: formatted}
+
+    :ets.insert(
+      :modbus_mqtt_hub_cache,
+      {{connection_id, field_name}, reading, DateTime.utc_now()}
+    )
+  end
+
+  defp emit_update(connection_id, field_name, value, formatted) do
+    put_hub_reading!(connection_id, field_name, value, formatted)
 
     Phoenix.PubSub.broadcast!(
       ModbusMqtt.PubSub,
-      "device:#{device_id}",
+      "device:#{connection_id}",
       {:field_update, field_name, value}
     )
   end

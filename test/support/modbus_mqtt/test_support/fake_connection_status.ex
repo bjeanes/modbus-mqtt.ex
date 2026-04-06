@@ -1,16 +1,19 @@
 defmodule ModbusMqtt.TestSupport.FakeConnectionStatus do
-  def device_connecting(device), do: send(device.test_pid, {:status, :connecting, device.id})
-  def device_connected(device), do: send(device.test_pid, {:status, :connected, device.id})
+  def device_connecting(connection),
+    do: send(connection.test_pid, {:status, :connecting, connection.id})
 
-  def device_retrying_connection(device, attempt) do
-    send(device.test_pid, {:status, :retrying_connection, device.id, attempt})
+  def device_connected(connection),
+    do: send(connection.test_pid, {:status, :connected, connection.id})
+
+  def device_retrying_connection(connection, attempt) do
+    send(connection.test_pid, {:status, :retrying_connection, connection.id, attempt})
   end
 
-  def device_connection_failed(device, message) do
-    send(device.test_pid, {:status, :connection_failed, device.id, message})
+  def device_connection_failed(connection, message) do
+    send(connection.test_pid, {:status, :connection_failed, connection.id, message})
   end
 
-  def device_disconnected(device, reason) do
-    send(device.test_pid, {:status, :disconnected, device.id, reason})
+  def device_disconnected(connection, reason) do
+    send(connection.test_pid, {:status, :disconnected, connection.id, reason})
   end
 end

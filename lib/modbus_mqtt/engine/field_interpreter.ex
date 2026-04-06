@@ -13,7 +13,7 @@ defmodule ModbusMqtt.Engine.FieldInterpreter do
 
   alias ModbusMqtt.Engine.{FieldCodec, FieldReading, RegisterCache}
 
-  defstruct [:device, :field, :destination, :pubsub, :last_bytes]
+  defstruct [:connection, :field, :destination, :pubsub, :last_bytes]
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args)
@@ -26,7 +26,7 @@ defmodule ModbusMqtt.Engine.FieldInterpreter do
     # Subscribe to register cache updates for our register type
     Phoenix.PubSub.subscribe(
       state.pubsub,
-      RegisterCache.register_topic(state.device.id, state.field.type)
+      RegisterCache.register_topic(state.connection.id, state.field.type)
     )
 
     # Try an initial read in case the cache is already warm
@@ -36,11 +36,11 @@ defmodule ModbusMqtt.Engine.FieldInterpreter do
   end
 
   @impl true
-  def handle_info({:registers_updated, device_id, register_type, changed_addresses}, state) do
+  def handle_info({:registers_updated, connection_id, register_type, changed_addresses}, state) do
     field = state.field
 
     state =
-      if device_id == state.device.id and register_type == field.type and
+      if connection_id == state.connection.id and register_type == field.type and
            addresses_overlap?(field, changed_addresses) do
         maybe_emit(state)
       else
@@ -64,12 +64,12 @@ defmodule ModbusMqtt.Engine.FieldInterpreter do
     addr = field.address + (field.address_offset || 0)
     count = FieldCodec.word_count(field)
 
-    case RegisterCache.get_words(state.device.id, field.type, addr, count) do
+    case RegisterCache.get_words(state.connection.id, field.type, addr, count) do
       {:ok, values} ->
         reading = FieldReading.from_modbus(values, field)
 
         if reading.bytes != state.last_bytes do
-          state.destination.put_value(state.device, field, reading)
+          state.destination.put_value(state.connection, field, reading)
           %{state | last_bytes: reading.bytes}
         else
           state

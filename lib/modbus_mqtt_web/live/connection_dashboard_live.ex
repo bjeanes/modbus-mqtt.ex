@@ -1,8 +1,9 @@
-defmodule ModbusMqttWeb.DeviceDashboardLive do
+defmodule ModbusMqttWeb.ConnectionDashboardLive do
   use ModbusMqttWeb, :live_view
 
-  alias ModbusMqtt.Devices
+  alias ModbusMqtt.Connections
   alias ModbusMqtt.Devices.Field
+  alias ModbusMqtt.Mqtt.Status
   alias ModbusMqttWeb.DeviceDashboard.FieldSorter
   alias ModbusMqtt.Engine.FieldSemantics
   alias ModbusMqtt.Engine.Hub
@@ -17,13 +18,13 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
     socket = assign(socket, :current_scope, nil)
 
     case Integer.parse(raw_id) do
-      {device_id, ""} ->
-        mount_device(socket, device_id)
+      {connection_id, ""} ->
+        mount_connection(socket, connection_id)
 
       _ ->
         {:ok,
          socket
-         |> put_flash(:error, "Invalid device id")
+         |> put_flash(:error, "Invalid connection id")
          |> push_navigate(to: ~p"/dashboards")}
     end
   end
@@ -62,7 +63,7 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
          field when not is_nil(field) <- Map.get(socket.assigns.fields_by_id, field_id),
          true <- Field.writable?(field),
          {:ok, value} <- extract_write_value(params),
-         :ok <- WriteQueue.write(socket.assigns.device, field, value) do
+         :ok <- WriteQueue.write(socket.assigns.connection, field, value) do
       {:noreply, put_flash(socket, :info, "Queued write for #{field.name}")}
     else
       false ->
@@ -85,7 +86,7 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
   @impl true
   def handle_info({:field_update, field_name, _value}, socket) do
     now = DateTime.utc_now()
-    reading = Hub.get_field_reading(socket.assigns.device.id, field_name)
+    reading = Hub.get_field_reading(socket.assigns.connection.id, field_name)
 
     socket =
       socket
@@ -109,11 +110,19 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
     {:noreply, socket}
   end
 
-  def handle_info({:field_value_changed, _device_id, field_name, _value}, socket) do
+  def handle_info({:field_value_changed, _connection_id, field_name, _value}, socket) do
     # Value-changed events are primarily consumed by WriteQueue to cancel stale retries.
     # LiveView already updates readings via {:field_update, ...}, so we only clear pending
     # write state here to avoid stale status badges and prevent clause errors.
     {:noreply, update(socket, :write_statuses, &Map.delete(&1, field_name))}
+  end
+
+  def handle_info({:connection_status_changed, connection_id, status}, socket) do
+    if connection_id == socket.assigns.connection.id do
+      {:noreply, assign(socket, :connection_status, normalize_connection_status(status))}
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_info({:clear_flash_field, field_name, timer_ref}, socket) do
@@ -143,7 +152,7 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} max_width_class="max-w-[1800px]">
-      <section id="device-dashboard" class="space-y-6">
+      <section id="connection-dashboard" class="space-y-6">
         <header class="space-y-3">
           <.link
             navigate={~p"/dashboards"}
@@ -154,9 +163,15 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
 
           <div class="flex flex-wrap items-end justify-between gap-4">
             <div class="space-y-1">
-              <h1 class="text-2xl font-semibold tracking-tight text-base-content">{@device.name}</h1>
+              <h1 class="text-2xl font-semibold tracking-tight text-base-content">
+                {@connection.name}
+              </h1>
               <p class="text-xs text-base-content/60">
-                Device id {@device.id} | Topic {@device.base_topic || @device.id}
+                Connection id {@connection.id} | Topic {@connection.base_topic || @connection.id}
+              </p>
+              <p class="text-xs text-base-content/60">
+                Status:
+                <span class={status_badge_class(@connection_status)}>{@connection_status}</span>
               </p>
             </div>
 
@@ -387,24 +402,24 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
     """
   end
 
-  defp mount_device(socket, device_id) do
-    case Devices.get_device(device_id) do
-      %{active: true} = device ->
+  defp mount_connection(socket, connection_id) do
+    case Connections.get_connection_with_device_fields(connection_id) do
+      %{active: true} = connection ->
         if connected?(socket) do
-          Phoenix.PubSub.subscribe(ModbusMqtt.PubSub, "device:#{device.id}")
+          Phoenix.PubSub.subscribe(ModbusMqtt.PubSub, "device:#{connection.id}")
           :timer.send_interval(1_000, :tick)
         end
 
         fields =
-          device.fields
+          connection.fields
           |> Enum.sort_by(&String.downcase(&1.name))
 
         now = DateTime.utc_now()
-        readings = Hub.get_device_readings(device.id)
+        readings = Hub.get_device_readings(connection.id)
 
         {:ok,
          socket
-         |> assign(:device, device)
+         |> assign(:connection, connection)
          |> assign(:fields, fields)
          |> assign(:fields_by_id, Map.new(fields, &{&1.id, &1}))
          |> assign(:fields_by_name, Map.new(fields, &{&1.name, &1}))
@@ -417,14 +432,36 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
          |> assign(:flash_timers, %{})
          |> assign(:staged_writes, %{})
          |> assign(:write_statuses, %{})
+         |> assign(
+           :connection_status,
+           normalize_connection_status(Status.connection_status(connection))
+         )
          |> assign(:now, now)}
 
       _ ->
         {:ok,
          socket
-         |> put_flash(:error, "Device is missing or not active")
+         |> put_flash(:error, "Connection is missing or inactive")
          |> push_navigate(to: ~p"/dashboards")}
     end
+  end
+
+  defp normalize_connection_status(nil), do: "unknown"
+  defp normalize_connection_status(status) when is_binary(status), do: status
+  defp normalize_connection_status(status), do: to_string(status)
+
+  defp status_badge_class(status) do
+    [
+      "ml-1 inline-flex rounded-full border px-2 py-0.5 font-medium",
+      case status do
+        "online" -> "border-emerald-300 bg-emerald-100 text-emerald-800"
+        "connecting" -> "border-amber-300 bg-amber-100 text-amber-800"
+        "retrying_connection" -> "border-amber-300 bg-amber-100 text-amber-800"
+        "connection_failed" -> "border-rose-300 bg-rose-100 text-rose-800"
+        "offline" -> "border-slate-300 bg-slate-100 text-slate-700"
+        _ -> "border-base-300 bg-base-200 text-base-content/70"
+      end
+    ]
   end
 
   defp maybe_put_reading(socket, _field_name, nil), do: socket
@@ -578,7 +615,7 @@ defmodule ModbusMqttWeb.DeviceDashboardLive do
         <% :discarded -> %>
           Pending write discarded
         <% :written -> %>
-          Write accepted by device
+          Write accepted by connection
       <% end %>
     </p>
     """

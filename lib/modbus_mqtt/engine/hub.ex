@@ -36,32 +36,32 @@ defmodule ModbusMqtt.Engine.Hub do
   If the raw bytes are different from the last known value, the Hub caches it,
   broadcasts internally via Phoenix.PubSub, and publishes to MQTT.
   """
-  def put_value(%{id: _device_id} = device, %{name: _field_name} = field, reading) do
-    put_value(__MODULE__, device, field, reading)
+  def put_value(%{id: _connection_id} = connection, %{name: _field_name} = field, reading) do
+    put_value(__MODULE__, connection, field, reading)
   end
 
-  def put_value(server, %{id: _device_id} = device, %{name: _field_name} = field, reading) do
-    GenServer.cast(server, {:put_value, device, field, reading})
+  def put_value(server, %{id: _connection_id} = connection, %{name: _field_name} = field, reading) do
+    GenServer.cast(server, {:put_value, connection, field, reading})
   end
 
   @doc "Retrieves the latest known state map of %{field_name => value} for an entire device"
-  def get_device_state(device_id) do
-    get_device_state(@table, device_id)
+  def get_device_state(connection_id) do
+    get_device_state(@table, connection_id)
   end
 
-  def get_device_state(table, device_id) do
-    get_device_readings(table, device_id)
+  def get_device_state(table, connection_id) do
+    get_device_readings(table, connection_id)
     |> Map.new(fn {field_name, reading} -> {field_name, reading.value} end)
   end
 
   @doc "Retrieves the latest known reading map for an entire device"
-  def get_device_readings(device_id) do
-    get_device_readings(@table, device_id)
+  def get_device_readings(connection_id) do
+    get_device_readings(@table, connection_id)
   end
 
-  def get_device_readings(table, device_id) do
-    # Search ETS for all keys matching {device_id, _}
-    match_spec = [{{{device_id, :"$1"}, :"$2", :"$3"}, [], [{{:"$1", :"$2", :"$3"}}]}]
+  def get_device_readings(table, connection_id) do
+    # Search ETS for all keys matching {connection_id, _}
+    match_spec = [{{{connection_id, :"$1"}, :"$2", :"$3"}, [], [{{:"$1", :"$2", :"$3"}}]}]
 
     :ets.select(table, match_spec)
     |> Enum.map(fn {field_name, reading, updated_at} ->
@@ -71,12 +71,12 @@ defmodule ModbusMqtt.Engine.Hub do
   end
 
   @doc "Retrieves the latest known reading for a single field on a device"
-  def get_field_reading(device_id, field_name) do
-    get_field_reading(@table, device_id, field_name)
+  def get_field_reading(connection_id, field_name) do
+    get_field_reading(@table, connection_id, field_name)
   end
 
-  def get_field_reading(table, device_id, field_name) do
-    key = {device_id, field_name}
+  def get_field_reading(table, connection_id, field_name) do
+    key = {connection_id, field_name}
 
     case :ets.lookup(table, key) do
       [{^key, reading, updated_at}] ->
@@ -88,8 +88,8 @@ defmodule ModbusMqtt.Engine.Hub do
   end
 
   @impl true
-  def handle_cast({:put_value, device, field, %{bytes: bytes, value: value} = reading}, state) do
-    key = {device.id, field.name}
+  def handle_cast({:put_value, connection, field, %{bytes: bytes, value: value} = reading}, state) do
+    key = {connection.id, field.name}
 
     changed? =
       case :ets.lookup(state.table, key) do
@@ -106,13 +106,13 @@ defmodule ModbusMqtt.Engine.Hub do
 
     if changed? do
       # 2. Phoenix PubSub Broadcast for Real-Time Web UI
-      state.broadcast_fun.(ModbusMqtt.PubSub, device.id, field.name, reading.value)
+      state.broadcast_fun.(ModbusMqtt.PubSub, connection.id, field.name, reading.value)
 
       # 3. Publish out to Tortoise311
-      topic = Topics.device_value_topic(device, field)
+      topic = Topics.device_value_topic(connection, field)
       state.publish_fun.(topic, reading.formatted, [])
 
-      detail_topic = Topics.device_value_detail_topic(device, field)
+      detail_topic = Topics.device_value_detail_topic(connection, field)
 
       detail_payload =
         Jason.encode!(%{
@@ -124,7 +124,7 @@ defmodule ModbusMqtt.Engine.Hub do
 
       state.publish_fun.(detail_topic, detail_payload, [])
 
-      Logger.debug("Hub Delta: #{device.name}:#{field.name} changed to #{reading.formatted}")
+      Logger.debug("Hub Delta: #{connection.name}:#{field.name} changed to #{reading.formatted}")
     end
 
     {:noreply, state}
@@ -137,17 +137,17 @@ defmodule ModbusMqtt.Engine.Hub do
     ModbusMqtt.Mqtt.Supervisor.publish(topic, payload, opts)
   end
 
-  def broadcast_update(pubsub, device_id, field_name, value) do
+  def broadcast_update(pubsub, connection_id, field_name, value) do
     Phoenix.PubSub.broadcast!(
       pubsub,
-      "device:#{device_id}",
+      "device:#{connection_id}",
       {:field_update, field_name, value}
     )
 
     Phoenix.PubSub.broadcast!(
       pubsub,
-      "device:#{device_id}",
-      {:field_value_changed, device_id, field_name, value}
+      "device:#{connection_id}",
+      {:field_value_changed, connection_id, field_name, value}
     )
   end
 end

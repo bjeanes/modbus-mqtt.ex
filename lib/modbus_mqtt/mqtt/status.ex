@@ -25,70 +25,91 @@ defmodule ModbusMqtt.Mqtt.Status do
     GenServer.cast(server, {:mqtt_connection_changed, status})
   end
 
-  def device_connecting(device) do
-    device_connecting(__MODULE__, device)
+  def device_connecting(connection) do
+    device_connecting(__MODULE__, connection)
   end
 
-  def device_connecting(server, device) do
-    set_device_status(server, device, "connecting")
+  def device_connecting(server, connection) do
+    set_device_status(server, connection, "connecting")
   end
 
-  def device_retrying_connection(device, attempt) do
-    device_retrying_connection(__MODULE__, device, attempt)
+  def device_retrying_connection(connection, attempt) do
+    device_retrying_connection(__MODULE__, connection, attempt)
   end
 
-  def device_retrying_connection(server, device, _attempt) do
-    GenServer.cast(server, {:device_state, device, "retrying_connection", nil})
+  def device_retrying_connection(server, connection, _attempt) do
+    GenServer.cast(server, {:device_state, connection, "retrying_connection", nil})
   end
 
-  def device_connected(device) do
-    device_connected(__MODULE__, device)
+  def device_connected(connection) do
+    device_connected(__MODULE__, connection)
   end
 
-  def device_connected(server, device) do
-    GenServer.cast(server, {:device_state, device, "online", nil})
+  def device_connected(server, connection) do
+    GenServer.cast(server, {:device_state, connection, "online", nil})
   end
 
-  def device_connection_failed(device, error_message) when is_binary(error_message) do
-    device_connection_failed(__MODULE__, device, error_message)
+  def device_connection_failed(connection, error_message) when is_binary(error_message) do
+    device_connection_failed(__MODULE__, connection, error_message)
   end
 
-  def device_connection_failed(server, device, error_message) when is_binary(error_message) do
-    GenServer.cast(server, {:device_state, device, "connection_failed", error_message})
+  def device_connection_failed(server, connection, error_message) when is_binary(error_message) do
+    GenServer.cast(server, {:device_state, connection, "connection_failed", error_message})
   end
 
-  def device_disconnected(device, error_message \\ nil)
+  def device_disconnected(connection, error_message \\ nil)
 
-  def device_disconnected(device, nil) do
-    device_disconnected(__MODULE__, device, nil)
+  def device_disconnected(connection, nil) do
+    device_disconnected(__MODULE__, connection, nil)
   end
 
-  def device_disconnected(device, error_message) when is_binary(error_message) do
-    device_disconnected(__MODULE__, device, error_message)
+  def device_disconnected(connection, error_message) when is_binary(error_message) do
+    device_disconnected(__MODULE__, connection, error_message)
   end
 
-  def device_disconnected(server, device, nil) do
-    GenServer.cast(server, {:device_state, device, "offline", :keep})
+  def device_disconnected(server, connection, nil) do
+    GenServer.cast(server, {:device_state, connection, "offline", :keep})
   end
 
-  def device_disconnected(server, device, error_message) when is_binary(error_message) do
-    GenServer.cast(server, {:device_state, device, "offline", error_message})
+  def device_disconnected(server, connection, error_message) when is_binary(error_message) do
+    GenServer.cast(server, {:device_state, connection, "offline", error_message})
   end
 
-  def device_error(device, error_message) when is_binary(error_message) do
-    device_error(__MODULE__, device, error_message)
+  def device_error(connection, error_message) when is_binary(error_message) do
+    device_error(__MODULE__, connection, error_message)
   end
 
-  def device_error(server, device, error_message) when is_binary(error_message) do
-    GenServer.cast(server, {:device_error, device, error_message})
+  def device_error(server, connection, error_message) when is_binary(error_message) do
+    GenServer.cast(server, {:device_error, connection, error_message})
   end
 
-  def clear_device_error(device) do
-    clear_device_error(__MODULE__, device)
+  def clear_device_error(connection) do
+    clear_device_error(__MODULE__, connection)
   end
 
-  def clear_device_error(server, device) do
-    GenServer.cast(server, {:clear_device_error, device})
+  def clear_device_error(server, connection) do
+    GenServer.cast(server, {:clear_device_error, connection})
+  end
+
+  def connection_status(connection, opts \\ []) do
+    connection_status(__MODULE__, connection, opts)
+  end
+
+  def connection_status(server, %{id: _id, base_topic: _base_topic} = connection, opts)
+      when is_list(opts) do
+    timeout_ms = Keyword.get(opts, :timeout, 100)
+
+    case GenServer.whereis(server) do
+      nil ->
+        nil
+
+      _pid ->
+        try do
+          GenServer.call(server, {:connection_status, connection}, timeout_ms)
+        catch
+          :exit, _reason -> nil
+        end
+    end
   end
 
   @impl true
@@ -99,7 +120,7 @@ defmodule ModbusMqtt.Mqtt.Status do
      %{
        mqtt_connected?: false,
        bridge_status: @bridge_offline,
-       devices: %{},
+       connections: %{},
        publish_fun: publish_fun
      }}
   end
@@ -116,34 +137,58 @@ defmodule ModbusMqtt.Mqtt.Status do
     {:noreply, %{state | mqtt_connected?: false, bridge_status: @bridge_offline}}
   end
 
-  def handle_cast({:device_state, device, status, error_update}, state) do
-    {next_state, updates} = update_device_entry(state, device, status, error_update)
+  def handle_cast({:device_state, connection, status, error_update}, state) do
+    {next_state, updates} = update_device_entry(state, connection, status, error_update)
     maybe_publish_updates(next_state, updates)
     {:noreply, next_state}
   end
 
-  def handle_cast({:device_error, device, error_message}, state) do
-    {next_state, updates} = update_device_entry(state, device, :keep, error_message)
+  def handle_cast({:device_error, connection, error_message}, state) do
+    {next_state, updates} = update_device_entry(state, connection, :keep, error_message)
     maybe_publish_updates(next_state, updates)
     {:noreply, next_state}
   end
 
-  def handle_cast({:clear_device_error, device}, state) do
-    {next_state, updates} = update_device_entry(state, device, :keep, nil)
+  def handle_cast({:clear_device_error, connection}, state) do
+    {next_state, updates} = update_device_entry(state, connection, :keep, nil)
     maybe_publish_updates(next_state, updates)
     {:noreply, next_state}
   end
 
-  defp set_device_status(server, device, status) do
-    GenServer.cast(server, {:device_state, device, status, :keep})
+  @impl true
+  def handle_call({:connection_status, connection}, _from, state) do
+    connection_key = Topic.key(connection)
+
+    status =
+      state.connections
+      |> Map.get(connection_key)
+      |> case do
+        nil -> nil
+        entry -> entry.status
+      end
+
+    {:reply, status, state}
   end
 
-  defp update_device_entry(state, device, status_update, error_update) do
-    device_key = Topic.key(device)
-    device_meta = %{id: device.id, name: device.name, base_topic: device.base_topic}
+  defp set_device_status(server, connection, status) do
+    GenServer.cast(server, {:device_state, connection, status, :keep})
+  end
+
+  defp update_device_entry(state, connection, status_update, error_update) do
+    connection_key = Topic.key(connection)
+
+    connection_meta = %{
+      id: connection.id,
+      name: connection.name,
+      base_topic: connection.base_topic
+    }
 
     entry =
-      Map.get(state.devices, device_key, %{device: device_meta, status: nil, last_error: nil})
+      Map.get(state.connections, connection_key, %{
+        connection: connection_meta,
+        status: nil,
+        last_error: nil
+      })
 
     next_status = if status_update == :keep, do: entry.status, else: status_update
 
@@ -153,23 +198,28 @@ defmodule ModbusMqtt.Mqtt.Status do
         value -> value
       end
 
-    next_entry = %{entry | device: device_meta, status: next_status, last_error: next_error}
+    next_entry = %{
+      entry
+      | connection: connection_meta,
+        status: next_status,
+        last_error: next_error
+    }
 
     updates =
       []
-      |> maybe_add_update(:status, entry.status, next_entry.status, device_meta)
-      |> maybe_add_update(:last_error, entry.last_error, next_entry.last_error, device_meta)
+      |> maybe_add_update(:status, entry.status, next_entry.status, connection_meta)
+      |> maybe_add_update(:last_error, entry.last_error, next_entry.last_error, connection_meta)
 
-    {%{state | devices: Map.put(state.devices, device_key, next_entry)}, updates}
+    {%{state | connections: Map.put(state.connections, connection_key, next_entry)}, updates}
   end
 
-  defp maybe_add_update(updates, _field, old_value, new_value, _device_meta)
+  defp maybe_add_update(updates, _field, old_value, new_value, _connection_meta)
        when old_value == new_value do
     updates
   end
 
-  defp maybe_add_update(updates, field, _old_value, new_value, device_meta) do
-    [{field, device_meta, new_value} | updates]
+  defp maybe_add_update(updates, field, _old_value, new_value, connection_meta) do
+    [{field, connection_meta, new_value} | updates]
   end
 
   defp maybe_publish_updates(%{mqtt_connected?: false}, _updates), do: :ok
@@ -179,21 +229,22 @@ defmodule ModbusMqtt.Mqtt.Status do
   end
 
   defp publish_device_snapshots(state) do
-    Enum.each(state.devices, fn {_key, entry} ->
+    Enum.each(state.connections, fn {_key, entry} ->
       if entry.status do
-        publish_retained(state, Topics.device_status_topic(entry.device), entry.status)
+        publish_retained(state, Topics.device_status_topic(entry.connection), entry.status)
       end
 
-      publish_retained(state, Topics.device_last_error_topic(entry.device), entry.last_error)
+      publish_retained(state, Topics.device_last_error_topic(entry.connection), entry.last_error)
     end)
   end
 
-  defp publish_device_update({:status, device_meta, value}, state) do
-    publish_retained(state, Topics.device_status_topic(device_meta), value)
+  defp publish_device_update({:status, connection_meta, value}, state) do
+    publish_retained(state, Topics.device_status_topic(connection_meta), value)
+    broadcast_connection_status(connection_meta, value)
   end
 
-  defp publish_device_update({:last_error, device_meta, value}, state) do
-    publish_retained(state, Topics.device_last_error_topic(device_meta), value)
+  defp publish_device_update({:last_error, connection_meta, value}, state) do
+    publish_retained(state, Topics.device_last_error_topic(connection_meta), value)
   end
 
   defp publish_bridge_status(state, value) do
@@ -218,5 +269,13 @@ defmodule ModbusMqtt.Mqtt.Status do
 
   def publish_mqtt(topic, payload, opts) do
     ModbusMqtt.Mqtt.Supervisor.publish(topic, payload, opts)
+  end
+
+  defp broadcast_connection_status(connection_meta, status) do
+    Phoenix.PubSub.broadcast(
+      ModbusMqtt.PubSub,
+      "device:#{connection_meta.id}",
+      {:connection_status_changed, connection_meta.id, status}
+    )
   end
 end

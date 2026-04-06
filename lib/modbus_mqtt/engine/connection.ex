@@ -1,46 +1,46 @@
 defmodule ModbusMqtt.Engine.Connection do
   @moduledoc """
   A GenServer that wraps the underlying Modbus protocol client connection.
-  Registers itself in the Registry so pollers can find it by device_id.
+  Registers itself in the Registry so pollers can find it by connection_id.
   """
   use GenServer, restart: :transient
   require Logger
 
   alias ModbusMqtt.Mqtt.Status
 
-  def start_link({device, opts}) when is_list(opts) do
-    start_link(device, opts)
+  def start_link({connection, opts}) when is_list(opts) do
+    start_link(connection, opts)
   end
 
-  def start_link(device) do
-    start_link(device, [])
+  def start_link(connection) do
+    start_link(connection, [])
   end
 
-  def start_link(device, opts) when is_list(opts) do
-    GenServer.start_link(__MODULE__, {device, opts}, name: via_tuple(device.id))
+  def start_link(connection, opts) when is_list(opts) do
+    GenServer.start_link(__MODULE__, {connection, opts}, name: via_tuple(connection.id))
   end
 
-  defp via_tuple(device_id) do
-    {:via, Registry, {ModbusMqtt.Registry, {__MODULE__, device_id}}}
+  defp via_tuple(connection_id) do
+    {:via, Registry, {ModbusMqtt.Registry, {__MODULE__, connection_id}}}
   end
 
-  @doc "Gets the PID of the connection for the given device ID"
-  def whereis(device_id) do
-    case Registry.lookup(ModbusMqtt.Registry, {__MODULE__, device_id}) do
+  @doc "Gets the PID of the connection for the given connection ID"
+  def whereis(connection_id) do
+    case Registry.lookup(ModbusMqtt.Registry, {__MODULE__, connection_id}) do
       [{pid, _}] -> pid
       [] -> nil
     end
   end
 
   @impl true
-  def init({device, opts}) do
+  def init({connection, opts}) do
     Process.flag(:trap_exit, true)
 
     # Defer synchronous Modbus connection block until after init returns to prevent
     # exceeding the default 5000ms GenServer startup timeout, which breaks the supervisor tree
     # when hardware endpoints are disconnected or unreachable on the network.
     state = %{
-      device: device,
+      connection: connection,
       client: Keyword.get(opts, :client, ModbusMqtt.Client.HexModbus),
       status: Keyword.get(opts, :status, Status),
       conn_pid: nil,
@@ -57,7 +57,7 @@ defmodule ModbusMqtt.Engine.Connection do
   def handle_continue(
         :connect,
         %{
-          device: device,
+          connection: connection,
           client: client_module,
           status: status,
           retry_count: retry_count,
@@ -68,31 +68,33 @@ defmodule ModbusMqtt.Engine.Connection do
       ) do
     # Merge protocol and transport_config
     config =
-      Map.merge(device.transport_config || %{}, %{"protocol" => to_string(device.protocol)})
+      Map.merge(connection.transport_config || %{}, %{
+        "protocol" => to_string(connection.protocol)
+      })
 
     endpoint = endpoint_summary(config)
 
     if retry_count == 0 do
-      status.device_connecting(device)
+      status.device_connecting(connection)
 
       Logger.info(
-        "Connecting Modbus device #{device.id} (#{device.name}) via #{device.protocol} to #{endpoint}"
+        "Connecting Modbus device #{connection.id} (#{connection.name}) via #{connection.protocol} to #{endpoint}"
       )
     else
-      status.device_retrying_connection(device, retry_count)
+      status.device_retrying_connection(connection, retry_count)
 
       Logger.info(
-        "Retrying Modbus device #{device.id} (#{device.name}) connection (attempt #{retry_count} of #{max_retries}) to #{endpoint}"
+        "Retrying Modbus device #{connection.id} (#{connection.name}) connection (attempt #{retry_count} of #{max_retries}) to #{endpoint}"
       )
     end
 
     case open_connection(client_module, config) do
       {:ok, conn_pid} ->
         Logger.info(
-          "Modbus device #{device.id} (#{device.name}) connected successfully to #{endpoint}"
+          "Modbus device #{connection.id} (#{connection.name}) connected successfully to #{endpoint}"
         )
 
-        status.device_connected(device)
+        status.device_connected(connection)
 
         # Link to the underlying connection so if it crashes, we crash and are restarted.
         if is_pid(conn_pid) do
@@ -103,23 +105,23 @@ defmodule ModbusMqtt.Engine.Connection do
 
       {:error, reason} ->
         message =
-          "Modbus device #{device.id} (#{device.name}) failed to connect to #{endpoint}: #{format_reason(reason)}"
+          "Modbus device #{connection.id} (#{connection.name}) failed to connect to #{endpoint}: #{format_reason(reason)}"
 
         Logger.error(message)
 
         if retry_count >= max_retries do
           Logger.error(
-            "Modbus device #{device.id} (#{device.name}) exceeded max retries (#{max_retries}), stopping"
+            "Modbus device #{connection.id} (#{connection.name}) exceeded max retries (#{max_retries}), stopping"
           )
 
-          status.device_connection_failed(device, message)
+          status.device_connection_failed(connection, message)
           {:stop, reason, state}
         else
           next_retry = retry_count + 1
           delay_ms = calculate_backoff_delay(next_retry, base_delay_ms, max_delay_ms)
 
           Logger.info(
-            "Scheduling retry for Modbus device #{device.id} (#{device.name}) in #{delay_ms}ms"
+            "Scheduling retry for Modbus device #{connection.id} (#{connection.name}) in #{delay_ms}ms"
           )
 
           Process.send_after(self(), :retry_connect, delay_ms)
@@ -131,13 +133,13 @@ defmodule ModbusMqtt.Engine.Connection do
   @impl true
   def handle_info(
         {:EXIT, conn_pid, reason},
-        %{conn_pid: conn_pid, device: device, status: status} = state
+        %{conn_pid: conn_pid, connection: connection, status: status} = state
       ) do
     message =
-      "Modbus device #{device.id} (#{device.name}) connection dropped: #{format_reason(reason)}"
+      "Modbus device #{connection.id} (#{connection.name}) connection dropped: #{format_reason(reason)}"
 
     Logger.error(message)
-    status.device_disconnected(device, message)
+    status.device_disconnected(connection, message)
     {:stop, reason, %{state | conn_pid: nil}}
   end
 
@@ -147,9 +149,9 @@ defmodule ModbusMqtt.Engine.Connection do
   end
 
   @impl true
-  def handle_info(msg, %{device: device} = state) do
+  def handle_info(msg, %{connection: connection} = state) do
     Logger.debug(
-      "Modbus device #{device.id} (#{device.name}) received unexpected message: #{inspect(msg)}"
+      "Modbus device #{connection.id} (#{connection.name}) received unexpected message: #{inspect(msg)}"
     )
 
     {:noreply, state}
@@ -258,11 +260,11 @@ defmodule ModbusMqtt.Engine.Connection do
 
   defp handle_client_result(state, {:error, reason} = result, operation) do
     if fatal_connection_error?(reason) do
-      device = state.device
+      connection = state.connection
       fatal_tag = String.to_atom("fatal_#{operation}_error")
 
       Logger.error(
-        "Modbus device #{device.id} (#{device.name}) detected fatal #{operation} error #{format_reason(reason)}; restarting device connection tree"
+        "Modbus device #{connection.id} (#{connection.name}) detected fatal #{operation} error #{format_reason(reason)}; restarting device connection tree"
       )
 
       {:stop, {fatal_tag, reason}, result, state}
@@ -276,10 +278,10 @@ defmodule ModbusMqtt.Engine.Connection do
   @impl true
   def terminate(
         reason,
-        %{client: client, conn_pid: conn_pid, device: device, status: status} = _state
+        %{client: client, conn_pid: conn_pid, connection: connection, status: status} = _state
       ) do
     if conn_pid do
-      status.device_disconnected(device, termination_error(reason))
+      status.device_disconnected(connection, termination_error(reason))
     end
 
     if client && conn_pid do

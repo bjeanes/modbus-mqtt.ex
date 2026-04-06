@@ -3,7 +3,7 @@ defmodule ModbusMqtt.Engine.WriteQueue do
   Queues and retries writes per field.
 
   Behavior:
-  - A new write for the same `{device_id, field_name}` supersedes any pending one.
+  - A new write for the same `{connection_id, field_name}` supersedes any pending one.
   - Pending writes are discarded when a fresh field value update arrives.
   - Retryable failures are retried with exponential backoff.
   - Emits write status events on `device:<id>` PubSub topics for LiveView feedback.
@@ -26,7 +26,7 @@ defmodule ModbusMqtt.Engine.WriteQueue do
     :max_retry_ms,
     :max_attempts,
     pending: %{},
-    subscribed_devices: MapSet.new()
+    subscribed_connections: MapSet.new()
   ]
 
   @type status_state :: :pending | :retrying | :written | :failed | :discarded
@@ -37,12 +37,12 @@ defmodule ModbusMqtt.Engine.WriteQueue do
   end
 
   @spec write(map(), map(), term(), keyword()) :: :ok | {:error, :write_queue_not_running}
-  def write(device, field, value, opts \\ []) do
+  def write(connection, field, value, opts \\ []) do
     server = Keyword.get(opts, :server, __MODULE__)
 
     case resolve_server_pid(server) do
       {:ok, _pid} ->
-        GenServer.cast(server, {:queue_write, device, field, value})
+        GenServer.cast(server, {:queue_write, connection, field, value})
         :ok
 
       :error ->
@@ -64,15 +64,15 @@ defmodule ModbusMqtt.Engine.WriteQueue do
   end
 
   @impl true
-  def handle_cast({:queue_write, device, field, value}, state) do
-    key = {device.id, field.name}
+  def handle_cast({:queue_write, connection, field, value}, state) do
+    key = {connection.id, field.name}
 
     state =
       state
-      |> ensure_device_subscription(device.id)
+      |> ensure_connection_subscription(connection.id)
       |> discard_pending(key, :superseded)
 
-    entry = %{device: device, field: field, value: value, attempt: 0, timer_ref: nil}
+    entry = %{connection: connection, field: field, value: value, attempt: 0, timer_ref: nil}
     broadcast_status(state, entry, :pending)
     send(self(), {:attempt_write, key})
 
@@ -89,7 +89,7 @@ defmodule ModbusMqtt.Engine.WriteQueue do
         {next_state, terminal?} = attempt_write(state, key, entry)
 
         if terminal? do
-          {:noreply, maybe_unsubscribe_device(next_state, entry.device.id)}
+          {:noreply, maybe_unsubscribe_connection(next_state, entry.connection.id)}
         else
           {:noreply, next_state}
         end
@@ -99,13 +99,13 @@ defmodule ModbusMqtt.Engine.WriteQueue do
   def handle_info({:field_value_changed, device_id, field_name, _value}, state) do
     key = {device_id, field_name}
     next_state = discard_pending(state, key, :value_changed)
-    {:noreply, maybe_unsubscribe_device(next_state, device_id)}
+    {:noreply, maybe_unsubscribe_connection(next_state, device_id)}
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
 
   defp attempt_write(state, key, entry) do
-    result = state.writer.write(entry.device, entry.field, entry.value)
+    result = state.writer.write(entry.connection, entry.field, entry.value)
 
     case result do
       :ok ->
@@ -156,26 +156,26 @@ defmodule ModbusMqtt.Engine.WriteQueue do
     :ok
   end
 
-  defp ensure_device_subscription(state, device_id) do
-    if MapSet.member?(state.subscribed_devices, device_id) do
+  defp ensure_connection_subscription(state, connection_id) do
+    if MapSet.member?(state.subscribed_connections, connection_id) do
       state
     else
-      Phoenix.PubSub.subscribe(state.pubsub, device_topic(device_id))
-      update_in(state.subscribed_devices, &MapSet.put(&1, device_id))
+      Phoenix.PubSub.subscribe(state.pubsub, device_topic(connection_id))
+      update_in(state.subscribed_connections, &MapSet.put(&1, connection_id))
     end
   end
 
-  defp maybe_unsubscribe_device(state, device_id) do
-    pending_for_device? =
-      Enum.any?(state.pending, fn {{pending_device_id, _field_name}, _entry} ->
-        pending_device_id == device_id
+  defp maybe_unsubscribe_connection(state, connection_id) do
+    pending_for_connection? =
+      Enum.any?(state.pending, fn {{pending_connection_id, _field_name}, _entry} ->
+        pending_connection_id == connection_id
       end)
 
-    if pending_for_device? or not MapSet.member?(state.subscribed_devices, device_id) do
+    if pending_for_connection? or not MapSet.member?(state.subscribed_connections, connection_id) do
       state
     else
-      Phoenix.PubSub.unsubscribe(state.pubsub, device_topic(device_id))
-      update_in(state.subscribed_devices, &MapSet.delete(&1, device_id))
+      Phoenix.PubSub.unsubscribe(state.pubsub, device_topic(connection_id))
+      update_in(state.subscribed_connections, &MapSet.delete(&1, connection_id))
     end
   end
 
@@ -194,7 +194,7 @@ defmodule ModbusMqtt.Engine.WriteQueue do
 
     Phoenix.PubSub.broadcast(
       state.pubsub,
-      device_topic(entry.device.id),
+      device_topic(entry.connection.id),
       {:field_write_status, entry.field.name, payload}
     )
   end

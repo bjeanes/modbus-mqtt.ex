@@ -24,18 +24,18 @@ defmodule ModbusMqtt.Engine.ScannerTest do
   test "scans holding registers and writes to RegisterCache" do
     :persistent_term.put({FakeConnection, :reply}, {:ok, [100, 200, 300]})
 
-    device = %{id: 10, unit: 2, name: "Meter", test_pid: self()}
+    connection = %{id: 10, unit: 2, name: "Meter", test_pid: self()}
 
     pid =
       start_supervised!(
         {Scanner,
          %{
-           device: device,
+           connection: connection,
            register_type: :holding_register,
            start_address: 40001,
            count: 3,
            poll_interval_ms: 30_000,
-           connection: FakeConnection,
+           connection_client: FakeConnection,
            status: FakeStatus,
            initial_poll_ms: :manual
          }}
@@ -51,18 +51,18 @@ defmodule ModbusMqtt.Engine.ScannerTest do
   test "scans input registers" do
     :persistent_term.put({FakeConnection, :reply}, {:ok, [42]})
 
-    device = %{id: 11, unit: 1, name: "Sensor", test_pid: self()}
+    connection = %{id: 11, unit: 1, name: "Sensor", test_pid: self()}
 
     pid =
       start_supervised!(
         {Scanner,
          %{
-           device: device,
+           connection: connection,
            register_type: :input_register,
            start_address: 5000,
            count: 1,
            poll_interval_ms: 30_000,
-           connection: FakeConnection,
+           connection_client: FakeConnection,
            status: FakeStatus,
            initial_poll_ms: :manual
          }}
@@ -78,18 +78,18 @@ defmodule ModbusMqtt.Engine.ScannerTest do
   test "reports read errors without crashing" do
     :persistent_term.put({FakeConnection, :reply}, {:error, {:exit, :timeout}})
 
-    device = %{id: 12, unit: 1, name: "Meter", test_pid: self()}
+    connection = %{id: 12, unit: 1, name: "Meter", test_pid: self()}
 
     pid =
       start_supervised!(
         {Scanner,
          %{
-           device: device,
+           connection: connection,
            register_type: :holding_register,
            start_address: 123,
            count: 1,
            poll_interval_ms: 30_000,
-           connection: FakeConnection,
+           connection_client: FakeConnection,
            status: FakeStatus,
            initial_poll_ms: :manual
          }}
@@ -106,18 +106,18 @@ defmodule ModbusMqtt.Engine.ScannerTest do
   test "does not publish device_error for reconnecting errors" do
     :persistent_term.put({FakeConnection, :reply}, {:error, :device_not_running})
 
-    device = %{id: 13, unit: 1, name: "Meter", test_pid: self()}
+    connection = %{id: 13, unit: 1, name: "Meter", test_pid: self()}
 
     pid =
       start_supervised!(
         {Scanner,
          %{
-           device: device,
+           connection: connection,
            register_type: :holding_register,
            start_address: 456,
            count: 1,
            poll_interval_ms: 30_000,
-           connection: FakeConnection,
+           connection_client: FakeConnection,
            status: FakeStatus,
            initial_poll_ms: :manual
          }}

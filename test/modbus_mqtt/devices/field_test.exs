@@ -151,12 +151,7 @@ defmodule ModbusMqtt.Devices.FieldTest do
   test "enforces field name uniqueness per device" do
     device =
       Repo.insert!(%Device{
-        name: "Test Device",
-        protocol: :tcp,
-        base_topic: "test-device",
-        active: true,
-        unit: 1,
-        transport_config: %{}
+        name: "Test Device"
       })
 
     attrs = bitmap_attrs(%{name: "power"})

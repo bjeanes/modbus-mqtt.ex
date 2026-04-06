@@ -2,15 +2,15 @@ defmodule ModbusMqtt.Engine.ReconcilerTest do
   use ExUnit.Case, async: false
 
   alias ModbusMqtt.Engine.Reconciler
-  alias ModbusMqtt.TestSupport.FakeDeviceSupervisor
+  alias ModbusMqtt.TestSupport.FakeConnectionSupervisor
 
   setup do
-    :persistent_term.put({FakeDeviceSupervisor, :owner}, self())
-    :persistent_term.put({FakeDeviceSupervisor, :pids}, %{})
+    :persistent_term.put({FakeConnectionSupervisor, :owner}, self())
+    :persistent_term.put({FakeConnectionSupervisor, :pids}, %{})
 
     on_exit(fn ->
-      :persistent_term.erase({FakeDeviceSupervisor, :owner})
-      :persistent_term.erase({FakeDeviceSupervisor, :pids})
+      :persistent_term.erase({FakeConnectionSupervisor, :owner})
+      :persistent_term.erase({FakeConnectionSupervisor, :pids})
     end)
 
     :ok
@@ -21,7 +21,7 @@ defmodule ModbusMqtt.Engine.ReconcilerTest do
     device_id = 1
 
     running_pid = spawn(fn -> Process.sleep(:infinity) end)
-    :persistent_term.put({FakeDeviceSupervisor, :pids}, %{device_id => running_pid})
+    :persistent_term.put({FakeConnectionSupervisor, :pids}, %{device_id => running_pid})
 
     updates = [
       [
@@ -48,12 +48,12 @@ defmodule ModbusMqtt.Engine.ReconcilerTest do
     end
 
     start_fun = fn device ->
-      send(owner, {:start_device, device.id})
+      send(owner, {:start_connection, device.id})
       {:ok, spawn(fn -> Process.sleep(:infinity) end)}
     end
 
     stop_fun = fn pid ->
-      send(owner, {:stop_device, pid})
+      send(owner, {:stop_connection, pid})
       :ok
     end
 
@@ -63,16 +63,16 @@ defmodule ModbusMqtt.Engine.ReconcilerTest do
          [
            name: nil,
            reconcile_interval_ms: 30,
-           list_active_devices_fun: list_fun,
-           start_device_fun: start_fun,
-           stop_device_fun: stop_fun,
-           whereis_device_supervisor_fun: &FakeDeviceSupervisor.whereis/1
+           list_active_connections_fun: list_fun,
+           start_connection_fun: start_fun,
+           stop_connection_fun: stop_fun,
+           whereis_connection_supervisor_fun: &FakeConnectionSupervisor.whereis/1
          ]}
       )
 
     assert_receive {:whereis, ^device_id}, 300
     assert_receive {:whereis, ^device_id}, 300
-    assert_receive {:stop_device, ^running_pid}, 500
+    assert_receive {:stop_connection, ^running_pid}, 500
 
     GenServer.stop(pid)
     Agent.stop(updates_agent)
@@ -122,12 +122,12 @@ defmodule ModbusMqtt.Engine.ReconcilerTest do
     end
 
     start_fun = fn device ->
-      send(owner, {:start_device, device.id})
+      send(owner, {:start_connection, device.id})
       {:ok, spawn(fn -> Process.sleep(:infinity) end)}
     end
 
     stop_fun = fn pid ->
-      send(owner, {:stop_device, pid})
+      send(owner, {:stop_connection, pid})
       :ok
     end
 
@@ -142,17 +142,17 @@ defmodule ModbusMqtt.Engine.ReconcilerTest do
          [
            name: nil,
            reconcile_interval_ms: 30,
-           list_active_devices_fun: list_fun,
-           start_device_fun: start_fun,
-           stop_device_fun: stop_fun,
-           whereis_device_supervisor_fun: whereis_fun
+           list_active_connections_fun: list_fun,
+           start_connection_fun: start_fun,
+           stop_connection_fun: stop_fun,
+           whereis_connection_supervisor_fun: whereis_fun
          ]}
       )
 
     assert_receive {:whereis, ^device_id}, 300
     assert_receive {:whereis, ^device_id}, 500
-    assert_receive {:stop_device, ^running_pid}, 500
-    assert_receive {:start_device, ^device_id}, 500
+    assert_receive {:stop_connection, ^running_pid}, 500
+    assert_receive {:start_connection, ^device_id}, 500
 
     GenServer.stop(pid)
     Agent.stop(updates_agent)
@@ -191,7 +191,7 @@ defmodule ModbusMqtt.Engine.ReconcilerTest do
     end
 
     start_fun = fn device ->
-      send(owner, {:start_device, device.id})
+      send(owner, {:start_connection, device.id})
       {:ok, spawn(fn -> Process.sleep(:infinity) end)}
     end
 
@@ -201,16 +201,16 @@ defmodule ModbusMqtt.Engine.ReconcilerTest do
          [
            name: nil,
            reconcile_interval_ms: :manual,
-           list_active_devices_fun: list_fun,
-           start_device_fun: start_fun,
-           stop_device_fun: fn _pid -> :ok end,
-           whereis_device_supervisor_fun: fn _id -> nil end
+           list_active_connections_fun: list_fun,
+           start_connection_fun: start_fun,
+           stop_connection_fun: fn _pid -> :ok end,
+           whereis_connection_supervisor_fun: fn _id -> nil end
          ]}
       )
 
-    refute_receive {:start_device, ^device_id}, 100
+    refute_receive {:start_connection, ^device_id}, 100
     Reconciler.reconcile_now(pid)
-    assert_receive {:start_device, ^device_id}, 300
+    assert_receive {:start_connection, ^device_id}, 300
 
     GenServer.stop(pid)
     Agent.stop(updates_agent)
@@ -238,7 +238,7 @@ defmodule ModbusMqtt.Engine.ReconcilerTest do
     end
 
     start_fun = fn dev ->
-      send(owner, {:start_device, dev.id})
+      send(owner, {:start_connection, dev.id})
       {:ok, spawn(fn -> Process.sleep(:infinity) end)}
     end
 
@@ -248,15 +248,15 @@ defmodule ModbusMqtt.Engine.ReconcilerTest do
          [
            name: nil,
            reconcile_interval_ms: :manual,
-           list_active_devices_fun: list_fun,
-           start_device_fun: start_fun,
-           stop_device_fun: fn _pid -> :ok end,
-           whereis_device_supervisor_fun: fn _id -> nil end
+           list_active_connections_fun: list_fun,
+           start_connection_fun: start_fun,
+           stop_connection_fun: fn _pid -> :ok end,
+           whereis_connection_supervisor_fun: fn _id -> nil end
          ]}
       )
 
     # Drain the initial reconcile triggered from init
-    assert_receive {:start_device, ^device_id}, 300
+    assert_receive {:start_connection, ^device_id}, 300
     initial_count = Agent.get(call_count, & &1)
 
     # Fire multiple rapid reconcile_now calls — should coalesce to one pass

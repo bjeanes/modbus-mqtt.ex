@@ -1,12 +1,12 @@
 defmodule ModbusMqtt.Mqtt.HomeAssistant do
   @moduledoc """
-  Publishes Home Assistant MQTT discovery payloads for active device fields.
+  Publishes Home Assistant MQTT discovery payloads for active connection fields.
   """
 
   use GenServer
   require Logger
 
-  alias ModbusMqtt.Devices
+  alias ModbusMqtt.Connections
   alias ModbusMqtt.Devices.Field
   alias ModbusMqtt.Mqtt.Topics
 
@@ -40,7 +40,7 @@ defmodule ModbusMqtt.Mqtt.HomeAssistant do
     {:ok,
      %{
        mqtt_connected?: false,
-       devices_mod: Keyword.get(opts, :devices_mod, Devices),
+       connections_mod: Keyword.get(opts, :connections_mod, Connections),
        publish_fun: Keyword.get(opts, :publish_fun, &__MODULE__.publish_mqtt/3)
      }}
   end
@@ -66,10 +66,10 @@ defmodule ModbusMqtt.Mqtt.HomeAssistant do
   end
 
   defp publish_discovery(state) do
-    state.devices_mod.list_active_devices_with_fields()
-    |> Enum.each(fn device ->
-      Enum.each(device.fields, fn field ->
-        publish_field_discovery(state, device, field)
+    state.connections_mod.list_active_connections_with_device_fields()
+    |> Enum.each(fn connection ->
+      Enum.each(connection.fields, fn field ->
+        publish_field_discovery(state, connection, field)
       end)
     end)
   end

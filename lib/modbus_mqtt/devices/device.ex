@@ -2,17 +2,13 @@ defmodule ModbusMqtt.Devices.Device do
   use Ecto.Schema
   import Ecto.Changeset
 
-  alias ModbusMqtt.Devices.Topic
-
   schema "devices" do
     field :name, :string
-    field :protocol, Ecto.Enum, values: [:tcp, :rtu, :custom], default: :tcp
-    field :base_topic, :string
-    field :active, :boolean, default: true
-    field :unit, :integer, default: 1
-    field :transport_config, :map, default: %{}
+    field :manufacturer, :string
+    field :model_number, :string
 
     has_many :fields, ModbusMqtt.Devices.Field
+    has_many :connections, ModbusMqtt.Devices.Connection
 
     timestamps(type: :utc_datetime)
   end
@@ -20,11 +16,9 @@ defmodule ModbusMqtt.Devices.Device do
   @doc false
   def changeset(device, attrs) do
     device
-    |> cast(attrs, [:name, :protocol, :base_topic, :active, :unit, :transport_config])
-    |> update_change(:base_topic, &Topic.normalize/1)
-    |> validate_required([:name, :protocol, :active, :unit, :transport_config])
-    |> Topic.validate_segment(:base_topic)
-    |> check_constraint(:base_topic, name: :devices_base_topic_single_segment)
-    |> unique_constraint(:base_topic, name: :devices_base_topic_index)
+    |> cast(attrs, [:name, :manufacturer, :model_number])
+    |> validate_required([:name])
+    |> validate_length(:manufacturer, max: 120)
+    |> validate_length(:model_number, max: 255)
   end
 end

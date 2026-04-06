@@ -1,12 +1,12 @@
 defmodule ModbusMqtt.Engine.Reconciler do
   @moduledoc """
-  Continuously reconciles active device definitions from the database with the
-  running per-device engine supervisor trees.
+  Continuously reconciles active connections from the database with the
+  running per-connection engine supervisor trees.
 
   Responsibilities:
-  - Start missing device trees for active devices.
+  - Start missing connection trees for active connections.
   - Stop running trees that are no longer active.
-  - Restart running trees when device/register definitions change.
+  - Restart running trees when connection/register definitions change.
   """
   use GenServer
   require Logger
@@ -40,23 +40,31 @@ defmodule ModbusMqtt.Engine.Reconciler do
   def init(opts) do
     state = %{
       reconcile_interval_ms: reconcile_interval(opts),
-      list_active_devices_fun:
+      list_active_connections_fun:
         Keyword.get(
           opts,
-          :list_active_devices_fun,
-          &ModbusMqtt.Devices.list_active_devices_with_fields/0
+          :list_active_connections_fun,
+          &ModbusMqtt.Connections.list_active_connections_with_device_fields/0
         ),
-      start_device_fun:
-        Keyword.get(opts, :start_device_fun, &ModbusMqtt.Engine.Supervisor.start_device/1),
-      stop_device_fun:
-        Keyword.get(opts, :stop_device_fun, &ModbusMqtt.Engine.Supervisor.stop_device/1),
-      whereis_device_supervisor_fun:
+      start_connection_fun:
         Keyword.get(
           opts,
-          :whereis_device_supervisor_fun,
-          &ModbusMqtt.Engine.DeviceSupervisor.whereis/1
+          :start_connection_fun,
+          &ModbusMqtt.Engine.Supervisor.start_connection/1
         ),
-      device_signatures: %{},
+      stop_connection_fun:
+        Keyword.get(
+          opts,
+          :stop_connection_fun,
+          &ModbusMqtt.Engine.Supervisor.stop_connection/1
+        ),
+      whereis_connection_supervisor_fun:
+        Keyword.get(
+          opts,
+          :whereis_connection_supervisor_fun,
+          &ModbusMqtt.Engine.ConnectionSupervisor.whereis/1
+        ),
+      connection_signatures: %{},
       debounce_timer: nil
     }
 
@@ -88,56 +96,56 @@ defmodule ModbusMqtt.Engine.Reconciler do
   end
 
   defp reconcile(state) do
-    devices = state.list_active_devices_fun.()
-    desired_ids = MapSet.new(Enum.map(devices, & &1.id))
+    connections = state.list_active_connections_fun.()
+    desired_ids = MapSet.new(Enum.map(connections, & &1.id))
 
-    Logger.debug("Engine reconciler evaluating #{length(devices)} active device(s)")
+    Logger.debug("Engine reconciler evaluating #{length(connections)} active connection(s)")
 
-    Enum.each(Map.keys(state.device_signatures), fn device_id ->
-      if not MapSet.member?(desired_ids, device_id) do
-        stop_device_if_running(state, device_id, "inactive or removed")
+    Enum.each(Map.keys(state.connection_signatures), fn connection_id ->
+      if not MapSet.member?(desired_ids, connection_id) do
+        stop_connection_if_running(state, connection_id, "inactive or removed")
       end
     end)
 
-    Enum.each(devices, fn device ->
-      ensure_device_tree(state, device)
+    Enum.each(connections, fn connection ->
+      ensure_connection_tree(state, connection)
     end)
 
     next_signatures =
-      Map.new(devices, fn device ->
-        {device.id, device_signature(device)}
+      Map.new(connections, fn connection ->
+        {connection.id, connection_signature(connection)}
       end)
 
-    %{state | device_signatures: next_signatures}
+    %{state | connection_signatures: next_signatures}
   end
 
-  defp ensure_device_tree(state, device) do
-    device_id = device.id
-    desired_signature = device_signature(device)
-    current_signature = Map.get(state.device_signatures, device_id)
-    running_pid = state.whereis_device_supervisor_fun.(device_id)
+  defp ensure_connection_tree(state, connection) do
+    connection_id = connection.id
+    desired_signature = connection_signature(connection)
+    current_signature = Map.get(state.connection_signatures, connection_id)
+    running_pid = state.whereis_connection_supervisor_fun.(connection_id)
 
     cond do
       is_nil(running_pid) ->
-        start_device(state, device)
+        start_connection(state, connection)
 
       is_nil(current_signature) ->
         :ok
 
       current_signature != desired_signature ->
-        Logger.info("Engine config changed for #{device.name}; restarting device tree")
-        stop_device_if_running(state, device_id, "configuration changed")
-        start_device(state, device)
+        Logger.info("Engine config changed for #{connection.name}; restarting connection tree")
+        stop_connection_if_running(state, connection_id, "configuration changed")
+        start_connection(state, connection)
 
       true ->
         :ok
     end
   end
 
-  defp start_device(state, device) do
-    case state.start_device_fun.(device) do
+  defp start_connection(state, connection) do
+    case state.start_connection_fun.(connection) do
       {:ok, _pid} ->
-        Logger.info("Started Engine for #{device.name}")
+        Logger.info("Started Engine for connection #{connection.id}")
 
       {:error, {:already_started, _pid}} ->
         :ok
@@ -146,26 +154,26 @@ defmodule ModbusMqtt.Engine.Reconciler do
         :ok
 
       {:error, reason} ->
-        Logger.error("Failed to start Engine for #{device.name}: #{inspect(reason)}")
+        Logger.error("Failed to start Engine for connection #{connection.id}: #{inspect(reason)}")
     end
   end
 
-  defp stop_device_if_running(state, device_id, reason) do
-    case state.whereis_device_supervisor_fun.(device_id) do
+  defp stop_connection_if_running(state, connection_id, reason) do
+    case state.whereis_connection_supervisor_fun.(connection_id) do
       nil ->
         :ok
 
       pid when is_pid(pid) ->
-        case state.stop_device_fun.(pid) do
+        case state.stop_connection_fun.(pid) do
           :ok ->
-            Logger.info("Stopped Engine for device #{device_id} (#{reason})")
+            Logger.info("Stopped Engine for connection #{connection_id} (#{reason})")
 
           {:error, :not_found} ->
             :ok
 
           {:error, stop_reason} ->
             Logger.warning(
-              "Failed to stop Engine for device #{device_id} (#{reason}): #{inspect(stop_reason)}"
+              "Failed to stop Engine for connection #{connection_id} (#{reason}): #{inspect(stop_reason)}"
             )
         end
     end
@@ -191,20 +199,20 @@ defmodule ModbusMqtt.Engine.Reconciler do
     )
   end
 
-  defp device_signature(device) do
+  defp connection_signature(connection) do
     fields_signature =
-      device.fields
+      connection.fields
       |> List.wrap()
       |> Enum.sort_by(& &1.id)
       |> Enum.map(&field_signature/1)
 
     %{
-      id: device.id,
-      name: device.name,
-      protocol: device.protocol,
-      base_topic: device.base_topic,
-      unit: device.unit,
-      transport_config: device.transport_config || %{},
+      id: connection.id,
+      name: connection.name,
+      protocol: connection.protocol,
+      base_topic: connection.base_topic,
+      unit: connection.unit,
+      transport_config: connection.transport_config || %{},
       fields: fields_signature
     }
   end

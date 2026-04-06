@@ -35,12 +35,12 @@ The UI and MQTT write path currently support:
 
 ## Architecture
 
-1. `ModbusMqtt.Engine.Reconciler` keeps active device trees aligned with the database.
-2. `ModbusMqtt.Engine.Supervisor` runs one `DeviceSupervisor` per active device.
-3. Each device tree manages a Modbus `Connection`, scan processes, field interpretation, and write coordination.
+1. `ModbusMqtt.Engine.Reconciler` keeps active connection trees aligned with the database.
+2. `ModbusMqtt.Engine.Supervisor` runs one `ConnectionSupervisor` per active connection.
+3. Each connection tree manages a Modbus connection process, scan processes, field interpretation, and write coordination.
 4. `ModbusMqtt.Engine.RegisterCache` stores raw words in ETS.
 5. `ModbusMqtt.Engine.Hub` stores the latest interpreted readings, broadcasts updates internally, and publishes MQTT telemetry.
-6. `ModbusMqtt.Mqtt.Status` publishes retained bridge and device availability metadata.
+6. `ModbusMqtt.Mqtt.Status` publishes retained bridge and connection availability metadata.
 7. `ModbusMqtt.Mqtt.HomeAssistant` publishes Home Assistant discovery configs for active fields.
 
 ## MQTT contract

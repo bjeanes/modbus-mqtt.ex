@@ -4,25 +4,33 @@
 
 alias ModbusMqtt.Repo
 alias ModbusMqtt.Devices
-alias ModbusMqtt.Devices.{Device, Field}
+alias ModbusMqtt.Devices.{Connection, Device, Field}
 import Bitwise
 
 # Clean existing to ensure idempotency when running seeds multiple times
 Repo.delete_all(Field)
+Repo.delete_all(Connection)
 Repo.delete_all(Device)
 
 device =
   Repo.insert!(%Device{
     name: "Sungrow Hybrid Inverter",
-    protocol: :tcp,
-    base_topic: "sungrow",
-    active: true,
-    unit: 1,
-    transport_config: %{
-      "host" => "10.10.20.216",
-      "port" => 502
-    }
+    manufacturer: "Sungrow",
+    model_number:
+      "SH3.0RS/SH3.6RS/SH4.0RS/SH5.0RS/SH6.0RS/SH8.0RS/SH10RS/SH5.0RT/SH6.0RT/SH8.0RT/SH10RT/SH5.0RT-20/SH6.0RT-20/SH8.0RT-20/SH10RT-20/SH5.0RT-V112/SH6.0RT-V112/SH8.0RT-V112/SH10RT-V112/SH5.0RT-V122/SH6.0RT-V122/SH8.0RT-V122/SH10RT-V122/SH5T/SH6T/SH8T/SH10T/SH12T/SH15T/SH20T/SH25T/MG5RL/MG6RL"
   })
+
+Repo.insert!(%Connection{
+  device_id: device.id,
+  protocol: :tcp,
+  base_topic: "sungrow",
+  active: true,
+  unit: 1,
+  transport_config: %{
+    "host" => "10.10.20.216",
+    "port" => 502
+  }
+})
 
 fields = [
   %{

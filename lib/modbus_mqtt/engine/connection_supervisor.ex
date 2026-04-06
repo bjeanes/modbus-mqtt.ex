@@ -1,6 +1,6 @@
-defmodule ModbusMqtt.Engine.DeviceSupervisor do
+defmodule ModbusMqtt.Engine.ConnectionSupervisor do
   @moduledoc """
-  A standard Supervisor that manages the children for a single Modbus Device.
+  A standard Supervisor that manages the children for a single Modbus Connection.
   This includes:
     1. The Modbus connection itself.
     2. Scanner processes for contiguous register ranges.
@@ -10,46 +10,46 @@ defmodule ModbusMqtt.Engine.DeviceSupervisor do
 
   alias ModbusMqtt.Engine.FieldCodec
 
-  def start_link(device) do
-    name = via_tuple(device.id)
-    Supervisor.start_link(__MODULE__, device, name: name)
+  def start_link(connection) do
+    name = via_tuple(connection.id)
+    Supervisor.start_link(__MODULE__, connection, name: name)
   end
 
-  @doc "Gets the PID of the device supervisor for the given device ID"
-  def whereis(device_id) do
-    case Registry.lookup(ModbusMqtt.Registry, {__MODULE__, device_id}) do
+  @doc "Gets the PID of the connection supervisor for the given connection ID"
+  def whereis(connection_id) do
+    case Registry.lookup(ModbusMqtt.Registry, {__MODULE__, connection_id}) do
       [{pid, _}] -> pid
       [] -> nil
     end
   end
 
-  defp via_tuple(device_id) do
-    {:via, Registry, {ModbusMqtt.Registry, {__MODULE__, device_id}}}
+  defp via_tuple(connection_id) do
+    {:via, Registry, {ModbusMqtt.Registry, {__MODULE__, connection_id}}}
   end
 
   @impl true
-  def init(device) do
+  def init(connection) do
     connection_opts = [status: ModbusMqtt.Mqtt.Status]
-    fields = device.fields || []
+    fields = connection.fields || []
 
     # 1. Connection process
     children = [
-      {ModbusMqtt.Engine.Connection, {device, connection_opts}}
+      {ModbusMqtt.Engine.Connection, {connection, connection_opts}}
     ]
 
     # 2. Derive Scanner specs from fields
-    scanners = derive_scanners(device, fields)
+    scanners = derive_scanners(connection, fields)
 
     # 3. One FieldInterpreter per field
     interpreters =
       for field <- fields do
         %{
-          id: {ModbusMqtt.Engine.FieldInterpreter, device.id, field.id},
+          id: {ModbusMqtt.Engine.FieldInterpreter, connection.id, field.id},
           start:
             {ModbusMqtt.Engine.FieldInterpreter, :start_link,
              [
                %{
-                 device: device,
+                 connection: connection,
                  field: field,
                  destination: ModbusMqtt.Engine.Hub
                }
@@ -69,7 +69,7 @@ defmodule ModbusMqtt.Engine.DeviceSupervisor do
   ranges into contiguous scans. The poll interval for each scan is the
   minimum across all fields in the range.
   """
-  def derive_scanners(device, fields) do
+  def derive_scanners(connection, fields) do
     fields
     |> Enum.group_by(& &1.type)
     |> Enum.flat_map(fn {register_type, type_fields} ->
@@ -85,17 +85,17 @@ defmodule ModbusMqtt.Engine.DeviceSupervisor do
         count = end_addr - start_addr + 1
 
         %{
-          id: {ModbusMqtt.Engine.Scanner, device.id, register_type, idx},
+          id: {ModbusMqtt.Engine.Scanner, connection.id, register_type, idx},
           start:
             {ModbusMqtt.Engine.Scanner, :start_link,
              [
                %{
-                 device: device,
+                 connection: connection,
                  register_type: register_type,
                  start_address: start_addr,
                  count: count,
                  poll_interval_ms: interval,
-                 connection: ModbusMqtt.Engine.Connection,
+                 connection_client: ModbusMqtt.Engine.Connection,
                  status: ModbusMqtt.Mqtt.Status
                }
              ]}

@@ -1,8 +1,8 @@
 defmodule ModbusMqtt.Engine.Supervisor do
   @moduledoc """
-  The core DynamicSupervisor for managing Modbus device connections.
-  When a configuration changes in the Database, this supervisor can be 
-  directed to start, stop, or restart the child DeviceSupervisor trees dynamically.
+  The core DynamicSupervisor for managing Modbus connection trees.
+  When a configuration changes in the database, this supervisor can be
+  directed to start, stop, or restart the child ConnectionSupervisor trees dynamically.
   """
   use DynamicSupervisor
 
@@ -20,17 +20,17 @@ defmodule ModbusMqtt.Engine.Supervisor do
   end
 
   @doc """
-  Starts a ModbusMqtt.Engine.DeviceSupervisor tree for the given device configuration.
+  Starts a ModbusMqtt.Engine.ConnectionSupervisor tree for the given connection.
   """
-  def start_device(device) do
-    spec = {ModbusMqtt.Engine.DeviceSupervisor, device}
+  def start_connection(connection) do
+    spec = {ModbusMqtt.Engine.ConnectionSupervisor, connection}
     DynamicSupervisor.start_child(__MODULE__, spec)
   end
 
   @doc """
-  Stops a running device supervisor tree.
+  Stops a running connection supervisor tree.
   """
-  def stop_device(pid) do
+  def stop_connection(pid) do
     DynamicSupervisor.terminate_child(__MODULE__, pid)
   end
 end

@@ -143,49 +143,49 @@ defmodule ModbusMqtt.Engine.ConnectionTest do
   end
 
   test "connects and delegates reads through the configured client" do
-    device_id = System.unique_integer([:positive])
+    connection_id = System.unique_integer([:positive])
 
-    device = %{
-      id: device_id,
+    connection = %{
+      id: connection_id,
       name: "Test Device",
       protocol: :tcp,
       unit: 1,
       test_pid: self(),
       transport_config: %{
         "host" => "127.0.0.1",
-        "device_id" => device_id,
+        "device_id" => connection_id,
         "test_pid" => self(),
         "read_values" => [77]
       }
     }
 
-    pid = start_supervised!({Connection, {device, client: FakeClient, status: FakeStatus}})
+    pid = start_supervised!({Connection, {connection, client: FakeClient, status: FakeStatus}})
 
-    assert_receive {:status, :connecting, ^device_id}
+    assert_receive {:status, :connecting, ^connection_id}
     assert_receive {:client_open, _config}
-    assert_receive {:status, :connected, ^device_id}
+    assert_receive {:status, :connected, ^connection_id}
 
-    assert Connection.read_holding_registers(device_id, 1, 40001, 1) == {:ok, [77]}
+    assert Connection.read_holding_registers(connection_id, 1, 40001, 1) == {:ok, [77]}
     assert_receive {:read_holding_registers, 1, 40001, 1}
 
-    assert Connection.write_coil(device_id, 1, 2, 1) == :ok
+    assert Connection.write_coil(connection_id, 1, 2, 1) == :ok
     assert_receive {:write_coil, 1, 2, [1]}
 
-    assert Connection.write_holding_registers(device_id, 1, 500, [1, 2]) == :ok
+    assert Connection.write_holding_registers(connection_id, 1, 500, [1, 2]) == :ok
     assert_receive {:write_holding_registers, 1, 500, [1, 2]}
 
     GenServer.stop(pid)
-    assert_receive {:client_close, ^device_id}
+    assert_receive {:client_close, ^connection_id}
   end
 
   test "reports connection failures through the injected status module" do
     trap_exit? = Process.flag(:trap_exit, true)
     on_exit(fn -> Process.flag(:trap_exit, trap_exit?) end)
 
-    device_id = System.unique_integer([:positive])
+    connection_id = System.unique_integer([:positive])
 
-    device = %{
-      id: device_id,
+    connection = %{
+      id: connection_id,
       name: "Broken Device",
       protocol: :tcp,
       unit: 1,
@@ -197,10 +197,12 @@ defmodule ModbusMqtt.Engine.ConnectionTest do
     }
 
     {:ok, pid} =
-      Connection.start_link({device, [client: FakeClient, status: FakeStatus, max_retries: 0]})
+      Connection.start_link(
+        {connection, [client: FakeClient, status: FakeStatus, max_retries: 0]}
+      )
 
-    assert_receive {:status, :connecting, ^device_id}
-    assert_receive {:status, :connection_failed, ^device_id, message}
+    assert_receive {:status, :connecting, ^connection_id}
+    assert_receive {:status, :connection_failed, ^connection_id, message}
     assert message =~ "failed to connect"
     assert_receive {:EXIT, ^pid, :boom}
   end
@@ -209,20 +211,20 @@ defmodule ModbusMqtt.Engine.ConnectionTest do
     trap_exit? = Process.flag(:trap_exit, true)
     on_exit(fn -> Process.flag(:trap_exit, trap_exit?) end)
 
-    device_id = System.unique_integer([:positive])
+    connection_id = System.unique_integer([:positive])
 
     # State variable to track how many times open was called
     {:ok, call_count} = Agent.start_link(fn -> 0 end)
 
-    device = %{
-      id: device_id,
+    connection = %{
+      id: connection_id,
       name: "Retry Device",
       protocol: :tcp,
       unit: 1,
       test_pid: self(),
       transport_config: %{
         "host" => "127.0.0.1",
-        "device_id" => device_id,
+        "device_id" => connection_id,
         "test_pid" => self(),
         "call_count_pid" => call_count
       }
@@ -230,7 +232,7 @@ defmodule ModbusMqtt.Engine.ConnectionTest do
 
     {:ok, pid} =
       Connection.start_link(
-        {device,
+        {connection,
          [
            client: FakeClientWithRetries,
            status: FakeStatus,
@@ -240,16 +242,16 @@ defmodule ModbusMqtt.Engine.ConnectionTest do
          ]}
       )
 
-    assert_receive {:status, :connecting, ^device_id}
-    assert_receive {:status, :retrying_connection, ^device_id, 1}, 1000
-    assert_receive {:status, :retrying_connection, ^device_id, 2}, 1000
-    assert_receive {:status, :connected, ^device_id}, 1000
+    assert_receive {:status, :connecting, ^connection_id}
+    assert_receive {:status, :retrying_connection, ^connection_id, 1}, 1000
+    assert_receive {:status, :retrying_connection, ^connection_id, 2}, 1000
+    assert_receive {:status, :connected, ^connection_id}, 1000
 
     # Verify the connection is working
-    assert Connection.read_holding_registers(device_id, 1, 0, 1) == {:ok, [123]}
+    assert Connection.read_holding_registers(connection_id, 1, 0, 1) == {:ok, [123]}
 
     GenServer.stop(pid)
-    assert_receive {:client_close, ^device_id}
+    assert_receive {:client_close, ^connection_id}
 
     Agent.stop(call_count)
   end
@@ -258,24 +260,24 @@ defmodule ModbusMqtt.Engine.ConnectionTest do
     trap_exit? = Process.flag(:trap_exit, true)
     on_exit(fn -> Process.flag(:trap_exit, trap_exit?) end)
 
-    device_id = System.unique_integer([:positive])
+    connection_id = System.unique_integer([:positive])
 
-    device = %{
-      id: device_id,
+    connection = %{
+      id: connection_id,
       name: "Always Broken Device",
       protocol: :tcp,
       unit: 1,
       test_pid: self(),
       transport_config: %{
         "host" => "127.0.0.1",
-        "device_id" => device_id,
+        "device_id" => connection_id,
         "test_pid" => self()
       }
     }
 
     {:ok, pid} =
       Connection.start_link(
-        {device,
+        {connection,
          [
            client: FakeClientAlwaysFails,
            status: FakeStatus,
@@ -285,10 +287,10 @@ defmodule ModbusMqtt.Engine.ConnectionTest do
          ]}
       )
 
-    assert_receive {:status, :connecting, ^device_id}
-    assert_receive {:status, :retrying_connection, ^device_id, 1}, 2000
-    assert_receive {:status, :retrying_connection, ^device_id, 2}, 2000
-    assert_receive {:status, :connection_failed, ^device_id, _message}, 2000
+    assert_receive {:status, :connecting, ^connection_id}
+    assert_receive {:status, :retrying_connection, ^connection_id, 1}, 2000
+    assert_receive {:status, :retrying_connection, ^connection_id, 2}, 2000
+    assert_receive {:status, :connection_failed, ^connection_id, _message}, 2000
     assert_receive {:EXIT, ^pid, :permanent_failure}
   end
 
@@ -296,24 +298,24 @@ defmodule ModbusMqtt.Engine.ConnectionTest do
     trap_exit? = Process.flag(:trap_exit, true)
     on_exit(fn -> Process.flag(:trap_exit, trap_exit?) end)
 
-    device_id = System.unique_integer([:positive])
+    connection_id = System.unique_integer([:positive])
 
-    device = %{
-      id: device_id,
+    connection = %{
+      id: connection_id,
       name: "Disconnected Device",
       protocol: :tcp,
       unit: 1,
       test_pid: self(),
       transport_config: %{
         "host" => "127.0.0.1",
-        "device_id" => device_id,
+        "device_id" => connection_id,
         "test_pid" => self()
       }
     }
 
     {:ok, pid} =
       Connection.start_link(
-        {device,
+        {connection,
          [
            client: FakeClientReadDisconnected,
            status: FakeStatus,
@@ -321,11 +323,11 @@ defmodule ModbusMqtt.Engine.ConnectionTest do
          ]}
       )
 
-    assert_receive {:status, :connecting, ^device_id}
-    assert_receive {:status, :connected, ^device_id}
+    assert_receive {:status, :connecting, ^connection_id}
+    assert_receive {:status, :connected, ^connection_id}
 
-    assert Connection.read_holding_registers(device_id, 1, 0, 1) == {:error, :enotconn}
-    assert_receive {:status, :disconnected, ^device_id, _reason}, 1000
+    assert Connection.read_holding_registers(connection_id, 1, 0, 1) == {:error, :enotconn}
+    assert_receive {:status, :disconnected, ^connection_id, _reason}, 1000
     assert_receive {:EXIT, ^pid, {:fatal_read_error, :enotconn}}, 1000
   end
 
@@ -333,24 +335,24 @@ defmodule ModbusMqtt.Engine.ConnectionTest do
     trap_exit? = Process.flag(:trap_exit, true)
     on_exit(fn -> Process.flag(:trap_exit, trap_exit?) end)
 
-    device_id = System.unique_integer([:positive])
+    connection_id = System.unique_integer([:positive])
 
-    device = %{
-      id: device_id,
+    connection = %{
+      id: connection_id,
       name: "Write-Disconnected Device",
       protocol: :tcp,
       unit: 1,
       test_pid: self(),
       transport_config: %{
         "host" => "127.0.0.1",
-        "device_id" => device_id,
+        "device_id" => connection_id,
         "test_pid" => self()
       }
     }
 
     {:ok, pid} =
       Connection.start_link(
-        {device,
+        {connection,
          [
            client: FakeClientWriteDisconnected,
            status: FakeStatus,
@@ -358,11 +360,11 @@ defmodule ModbusMqtt.Engine.ConnectionTest do
          ]}
       )
 
-    assert_receive {:status, :connecting, ^device_id}
-    assert_receive {:status, :connected, ^device_id}
+    assert_receive {:status, :connecting, ^connection_id}
+    assert_receive {:status, :connected, ^connection_id}
 
-    assert Connection.write_holding_registers(device_id, 1, 0, [42]) == {:error, :enotconn}
-    assert_receive {:status, :disconnected, ^device_id, _reason}, 1000
+    assert Connection.write_holding_registers(connection_id, 1, 0, [42]) == {:error, :enotconn}
+    assert_receive {:status, :disconnected, ^connection_id, _reason}, 1000
     assert_receive {:EXIT, ^pid, {:fatal_write_error, :enotconn}}, 1000
   end
 end

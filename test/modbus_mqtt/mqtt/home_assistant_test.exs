@@ -3,8 +3,8 @@ defmodule ModbusMqtt.Mqtt.HomeAssistantTest do
 
   alias ModbusMqtt.Mqtt.HomeAssistant
 
-  defmodule FakeDevices do
-    def list_active_devices_with_fields do
+  defmodule FakeConnections do
+    def list_active_connections_with_device_fields do
       [
         %{
           id: 7,
@@ -72,7 +72,7 @@ defmodule ModbusMqtt.Mqtt.HomeAssistantTest do
     start_supervised!(
       {HomeAssistant,
        name: server,
-       devices_mod: FakeDevices,
+       connections_mod: FakeConnections,
        publish_fun: fn topic, payload, opts ->
          send(test_pid, {:published, topic, payload, opts})
          :ok
@@ -137,7 +137,7 @@ defmodule ModbusMqtt.Mqtt.HomeAssistantTest do
     start_supervised!(
       {HomeAssistant,
        name: server,
-       devices_mod: FakeDevices,
+       connections_mod: FakeConnections,
        publish_fun: fn topic, payload, opts ->
          send(test_pid, {:published, topic, payload, opts})
          :ok

@@ -15,12 +15,12 @@ defmodule ModbusMqtt.Engine.Scanner do
   alias ModbusMqtt.Engine.RegisterCache
 
   defstruct [
-    :device,
+    :connection,
     :register_type,
     :start_address,
     :count,
     :poll_interval_ms,
-    :connection,
+    :connection_client,
     :status,
     :initial_poll_ms
   ]
@@ -43,24 +43,26 @@ defmodule ModbusMqtt.Engine.Scanner do
     {:noreply, state}
   end
 
-  defp scan(%{device: device, register_type: type, start_address: addr, count: count} = state) do
-    unit = device.unit
+  defp scan(
+         %{connection: connection, register_type: type, start_address: addr, count: count} = state
+       ) do
+    unit = connection.unit
 
-    # Logger.debug("Scanning #{device.name} #{type} #{addr}+#{count} (unit #{unit})")
+    # Logger.debug("Scanning #{connection.name} #{type} #{addr}+#{count} (unit #{unit})")
 
     result =
       case type do
         :holding_register ->
-          state.connection.read_holding_registers(device.id, unit, addr, count)
+          state.connection_client.read_holding_registers(connection.id, unit, addr, count)
 
         :input_register ->
-          state.connection.read_input_registers(device.id, unit, addr, count)
+          state.connection_client.read_input_registers(connection.id, unit, addr, count)
 
         :coil ->
-          state.connection.read_coils(device.id, unit, addr, count)
+          state.connection_client.read_coils(connection.id, unit, addr, count)
 
         :discrete_input ->
-          state.connection.read_discrete_inputs(device.id, unit, addr, count)
+          state.connection_client.read_discrete_inputs(connection.id, unit, addr, count)
       end
 
     handle_response(result, state)
@@ -72,21 +74,21 @@ defmodule ModbusMqtt.Engine.Scanner do
       |> Enum.with_index()
       |> Enum.map(fn {word, offset} -> {state.start_address + offset, word} end)
 
-    RegisterCache.put_words(state.device.id, state.register_type, words)
+    RegisterCache.put_words(state.connection.id, state.register_type, words)
 
-    state.status.clear_device_error(state.device)
+    state.status.clear_device_error(state.connection)
   end
 
   defp handle_response({:error, reason}, state) do
     message =
-      "Scan failed for #{state.device.name} #{state.register_type} " <>
+      "Scan failed for #{state.connection.name} #{state.register_type} " <>
         "#{state.start_address}+#{state.count}: #{inspect(reason)}"
 
     if reconnecting_reason?(reason) do
       Logger.debug(message)
     else
       Logger.warning(message)
-      state.status.device_error(state.device, message)
+      state.status.device_error(state.connection, message)
     end
   end
 

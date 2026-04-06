@@ -1,7 +1,8 @@
 defmodule ModbusMqtt.Devices do
   @moduledoc """
-  Context module for device and field management.
-  Centralizes queries, changesets, and validation for devices and fields.
+  Context module for device metadata and field management.
+  Handles device metadata CRUD, field management, and field lookup by topic.
+  For connection management, see ModbusMqtt.Connections context.
   """
   import Ecto.Query
   require Logger
@@ -10,52 +11,25 @@ defmodule ModbusMqtt.Devices do
   alias ModbusMqtt.Devices.Device
   alias ModbusMqtt.Devices.Field
   alias ModbusMqtt.Devices.Topic
+  alias ModbusMqtt.Connections
 
-  @doc "Lists all active devices with their fields preloaded"
-  def list_active_devices_with_fields do
-    query =
-      from d in Device,
-        where: d.active == true,
-        preload: [:fields]
-
-    Repo.all(query)
-  end
-
-  @doc "Gets a single device by ID with fields preloaded"
-  def get_device!(id) do
-    Repo.get!(Device, id)
-    |> Repo.preload(:fields)
-  end
-
-  @doc "Gets a device by ID without raising if not found"
-  def get_device(id) do
-    case Repo.get(Device, id) do
-      nil -> nil
-      device -> Repo.preload(device, :fields)
-    end
-  end
-
-  @doc "Creates a new device"
+  @doc "Creates a new device metadata entry"
   def create_device(attrs \\ %{}) do
     %Device{}
     |> Device.changeset(attrs)
     |> Repo.insert()
-    |> maybe_reconcile_engine()
   end
 
-  @doc "Updates a device"
+  @doc "Updates a device metadata entry"
   def update_device(%Device{} = device, attrs) do
     device
     |> Device.changeset(attrs)
     |> Repo.update()
-    |> maybe_reconcile_engine()
   end
 
-  @doc "Deletes a device"
+  @doc "Deletes a device metadata entry"
   def delete_device(%Device{} = device) do
-    device
-    |> Repo.delete()
-    |> maybe_reconcile_engine()
+    Repo.delete(device)
   end
 
   @doc "Returns a device changeset for use in forms"
@@ -114,12 +88,12 @@ defmodule ModbusMqtt.Devices do
   @doc "Finds an active field by MQTT topic segments"
   def find_active_field_by_topic(device_topic, field_topic)
       when is_binary(device_topic) and is_binary(field_topic) do
-    list_active_devices_with_fields()
-    |> Enum.find_value(fn device ->
-      if Topic.key(device) == device_topic do
-        case Enum.find(device.fields, &(&1.name == field_topic)) do
+    Connections.list_active_connections_with_device_fields()
+    |> Enum.find_value(fn connection ->
+      if Topic.key(connection) == device_topic do
+        case Enum.find(connection.fields, &(&1.name == field_topic)) do
           nil -> nil
-          field -> {device, field}
+          field -> {connection, field}
         end
       end
     end)
